@@ -1,0 +1,13 @@
+# Saida de compilacao
+bin/
+dist/
+*.class
+
+# Banco H2 gerado em tempo de execucao
+dados/
+
+# As bibliotecas em lib/ SAO versionadas de proposito: o projeto precisa rodar
+# na maquina do professor sem baixar nada (nao adicionar lib/ aqui).
+
+# Saida da compilacao dos testes
+bin-testes/
