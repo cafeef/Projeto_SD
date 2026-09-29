@@ -26,6 +26,10 @@ public class VerificaOperacoes {
     static final SecureRandom RND = new SecureRandom();
     static final String TOKEN_FALSO = "a".repeat(64);
 
+    /** Vira false se alguma 'message' recebida tiver caractere fora do ASCII. */
+    static boolean todasSemAcento = true;
+    static String primeiraComAcento = null;
+
     public static void main(String[] args) throws Exception {
         porta = Integer.parseInt(args[0]);
 
@@ -46,6 +50,13 @@ public class VerificaOperacoes {
         readUser();
         updateUser();
         deleteUser();
+
+        // Regra 2.8: 'message' viaja em portugues SEM acento e sem emoji. Se
+        // alguem "corrigir" os textos para portugues acentuado, a resposta deixa
+        // de bater com a dos outros grupos no teste de interoperabilidade -- e
+        // esta verificacao quebra antes que isso aconteca na avaliacao.
+        confere("todas as mensagens do protocolo vieram sem acento (regra 2.8)"
+                + (todasSemAcento ? "" : " -- achei: " + primeiraComAcento), todasSemAcento);
 
         System.out.println("\n===== operacoes: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
@@ -380,6 +391,7 @@ public class VerificaOperacoes {
     static void checa(String nome, String resposta, String op, String status, String message) {
         try {
             JsonObject r = json(resposta);
+            registrarAcento(campo(r, "message"));
             boolean passou = op.equals(campo(r, "op"))
                     && status.equals(campo(r, "status"))
                     && message.equals(campo(r, "message"));
@@ -392,6 +404,22 @@ public class VerificaOperacoes {
         } catch (RuntimeException e) {
             falhas++;
             System.out.println("  FALHA " + nome + " (resposta ilegivel): " + resposta);
+        }
+    }
+
+    /** Anota se a mensagem trouxe algum caractere fora do ASCII imprimivel. */
+    static void registrarAcento(String message) {
+        if (message == null) {
+            return;
+        }
+        for (char c : message.toCharArray()) {
+            if (c < 0x20 || c > 0x7E) {
+                todasSemAcento = false;
+                if (primeiraComAcento == null) {
+                    primeiraComAcento = message;
+                }
+                return;
+            }
         }
     }
 

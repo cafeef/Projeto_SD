@@ -4,6 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import ui.Estilo;
+
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -19,8 +21,8 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
+import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -34,7 +36,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 /**
- * Interface grafica do cliente.
+ * Interface gráfica do cliente.
  *
  * Atende a obs. 5 da grade -- um campo para o IP e outro para a porta. As
  * mensagens JSON trocadas (obs. 3) saem no TERMINAL que executa o cliente.
@@ -42,14 +44,18 @@ import java.util.function.Consumer;
  * Duas telas, trocadas por CardLayout:
  *
  *   ACESSO  -- abas de entrar (login) e cadastrar (register)
- *   SESSAO  -- meus dados (read_user), alterar (update_user),
+ *   SESSÃO  -- meus dados (read_user), alterar (update_user),
  *              excluir (delete_user) e sair (logout)
  *
- * O token fica so em memoria (regra 3.2) e e descartado em todo 401, que e a
- * reacao que a aba "Codigos de Status" manda ter.
+ * O token fica só em memória (regra 3.2) e é descartado em todo 401, que é a
+ * reação que a aba "Codigos de Status" manda ter.
  *
- * Nenhuma operacao de rede roda na EDT: toda troca vai para um executor de uma
- * thread so, e o retorno volta para a tela via invokeLater.
+ * Nenhuma operação de rede roda na EDT: toda troca vai para um executor de uma
+ * thread só, e o retorno volta para a tela via invokeLater.
+ *
+ * O texto desta tela usa acentuação normal, e as mensagens vindas do servidor
+ * são acentuadas por {@link Mensagens} na hora de exibir. No fio elas continuam
+ * exatamente como a regra 2.8 exige: em português, sem acento.
  */
 public final class ClienteGUI extends JFrame {
 
@@ -60,35 +66,36 @@ public final class ClienteGUI extends JFrame {
 
     private static final String CARTAO_ACESSO = "acesso";
     private static final String CARTAO_SESSAO = "sessao";
+    private static final Dimension TAMANHO_CAMPO = new Dimension(240, 30);
 
-    // --- conexao ---
+    // --- conexão ---
     private final JTextField campoIp = new JTextField("127.0.0.1", 12);
     private final JTextField campoPorta = new JTextField("5000", 6);
-    private final JButton botaoConectar = new JButton("Conectar");
+    private final JButton botaoConectar = Estilo.botaoPrincipal("Conectar");
     private final JButton botaoDesconectar = new JButton("Desconectar");
-    private final JLabel rotuloStatus = new JLabel("Desconectado");
+    private final Estilo.Indicador indicador = new Estilo.Indicador("Desconectado", false);
 
     // --- login ---
-    private final JTextField loginEmail = new JTextField(20);
-    private final JPasswordField loginSenha = new JPasswordField(20);
-    private final JButton botaoEntrar = new JButton("Entrar");
+    private final JTextField loginEmail = new JTextField();
+    private final JPasswordField loginSenha = new JPasswordField();
+    private final JButton botaoEntrar = Estilo.botaoPrincipal("Entrar");
 
     // --- cadastro ---
-    private final JTextField cadEmail = new JTextField(20);
-    private final JTextField cadUsuario = new JTextField(20);
-    private final JPasswordField cadSenha = new JPasswordField(20);
-    private final JButton botaoCadastrar = new JButton("Cadastrar");
+    private final JTextField cadEmail = new JTextField();
+    private final JTextField cadUsuario = new JTextField();
+    private final JPasswordField cadSenha = new JPasswordField();
+    private final JButton botaoCadastrar = Estilo.botaoPrincipal("Cadastrar");
 
-    // --- sessao ---
-    private final JLabel dadosUsuario = new JLabel("-");
-    private final JLabel dadosEmail = new JLabel("-");
-    private final JLabel dadosRole = new JLabel("-");
-    private final JLabel dadosCriadoEm = new JLabel("-");
-    private final JTextField novoUsuario = new JTextField(16);
-    private final JPasswordField novaSenha = new JPasswordField(16);
+    // --- sessão ---
+    private final JLabel dadosUsuario = Estilo.valor("-");
+    private final JLabel dadosEmail = Estilo.valor("-");
+    private final JLabel dadosPerfil = Estilo.valor("-");
+    private final JLabel dadosCriadoEm = Estilo.valor("-");
+    private final JTextField novoUsuario = new JTextField();
+    private final JPasswordField novaSenha = new JPasswordField();
     private final JButton botaoRecarregar = new JButton("Recarregar");
-    private final JButton botaoSalvar = new JButton("Salvar alteracoes");
-    private final JButton botaoExcluir = new JButton("Excluir cadastro");
+    private final JButton botaoSalvar = Estilo.botaoPrincipal("Salvar alterações");
+    private final JButton botaoExcluir = Estilo.botaoDestrutivo("Excluir cadastro");
     private final JButton botaoSair = new JButton("Sair (logout)");
 
     private final CardLayout cartas = new CardLayout();
@@ -102,7 +109,7 @@ public final class ClienteGUI extends JFrame {
         return t;
     });
 
-    /** Token da sessao. Vive so aqui, em memoria (regra 3.2). */
+    /** Token da sessão. Vive só aqui, em memória (regra 3.2). */
     private transient String token;
 
     public ClienteGUI() {
@@ -123,46 +130,69 @@ public final class ClienteGUI extends JFrame {
             }
         });
 
-        setSize(660, 520);
+        // pack() dimensiona pelo que o conteudo pede, em vez de um tamanho
+        // fixo que pode cortar botoes quando a fonte do sistema e maior. O
+        // CardLayout ja considera o maior dos dois cartoes.
+        pack();
+        setSize(Math.max(getWidth(), 700), Math.max(getHeight(), 640));
+        setMinimumSize(getSize());
         setLocationRelativeTo(null);
     }
 
     // ------------------------------------------------------------------ layout
 
     private void montarTela() {
-        JPanel linhaConexao = new JPanel();
-        linhaConexao.setLayout(new BoxLayout(linhaConexao, BoxLayout.X_AXIS));
-        linhaConexao.add(new JLabel("IP: "));
-        campoIp.setMaximumSize(new Dimension(160, 30));
-        linhaConexao.add(campoIp);
-        linhaConexao.add(Box.createHorizontalStrut(12));
-        linhaConexao.add(new JLabel("Porta: "));
-        campoPorta.setMaximumSize(new Dimension(90, 30));
-        linhaConexao.add(campoPorta);
-        linhaConexao.add(Box.createHorizontalStrut(12));
-        linhaConexao.add(botaoConectar);
-        linhaConexao.add(Box.createHorizontalStrut(6));
-        linhaConexao.add(botaoDesconectar);
-        linhaConexao.add(Box.createHorizontalGlue());
-        rotuloStatus.setFont(rotuloStatus.getFont().deriveFont(Font.BOLD));
-        linhaConexao.add(rotuloStatus);
+        JLabel titulo = Estilo.titulo("Reserva de Salas");
+        JLabel subtitulo = Estilo.subtitulo("Cliente do sistema de reserva de salas do campus");
 
-        abasAcesso.addTab("Entrar", painelLogin());
-        abasAcesso.addTab("Cadastrar", painelCadastro());
+        JPanel cabecalho = new JPanel();
+        cabecalho.setLayout(new BoxLayout(cabecalho, BoxLayout.Y_AXIS));
+        Estilo.alinharEsquerda(titulo, subtitulo);
+        cabecalho.add(titulo);
+        cabecalho.add(Box.createVerticalStrut(2));
+        cabecalho.add(subtitulo);
+
+        JPanel conexaoPainel = Estilo.grupo("Servidor");
+        conexaoPainel.setLayout(new BoxLayout(conexaoPainel, BoxLayout.Y_AXIS));
+
+        JPanel linha = new JPanel();
+        linha.setLayout(new BoxLayout(linha, BoxLayout.X_AXIS));
+        linha.add(new JLabel("IP: "));
+        campoIp.setMaximumSize(new Dimension(170, 30));
+        linha.add(campoIp);
+        linha.add(Box.createHorizontalStrut(14));
+        linha.add(new JLabel("Porta: "));
+        campoPorta.setMaximumSize(new Dimension(90, 30));
+        linha.add(campoPorta);
+        linha.add(Box.createHorizontalStrut(14));
+        linha.add(botaoConectar);
+        linha.add(Box.createHorizontalStrut(8));
+        linha.add(botaoDesconectar);
+        linha.add(Box.createHorizontalGlue());
+
+        Estilo.alinharEsquerda(linha, indicador);
+        conexaoPainel.add(linha);
+        conexaoPainel.add(Box.createVerticalStrut(10));
+        conexaoPainel.add(indicador);
+
+        abasAcesso.addTab("  Entrar  ", painelLogin());
+        abasAcesso.addTab("  Cadastrar  ", painelCadastro());
 
         painelCartas.add(abasAcesso, CARTAO_ACESSO);
         painelCartas.add(painelSessao(), CARTAO_SESSAO);
         cartas.show(painelCartas, CARTAO_ACESSO);
 
-        JLabel aviso = new JLabel(
+        JLabel rodape = Estilo.rodape(
                 "As mensagens JSON trocadas aparecem no terminal que executa o cliente.");
-        aviso.setFont(aviso.getFont().deriveFont(Font.ITALIC));
 
-        JPanel conteudo = new JPanel(new BorderLayout(0, 12));
-        conteudo.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        conteudo.add(linhaConexao, BorderLayout.NORTH);
+        JPanel conteudo = new JPanel(new BorderLayout(0, 14));
+        conteudo.setBorder(Estilo.margem());
+        JPanel topo = new JPanel(new BorderLayout(0, 16));
+        topo.add(cabecalho, BorderLayout.NORTH);
+        topo.add(conexaoPainel, BorderLayout.SOUTH);
+        conteudo.add(topo, BorderLayout.NORTH);
         conteudo.add(painelCartas, BorderLayout.CENTER);
-        conteudo.add(aviso, BorderLayout.SOUTH);
+        conteudo.add(rodape, BorderLayout.SOUTH);
 
         setLayout(new BorderLayout());
         add(conteudo, BorderLayout.CENTER);
@@ -170,97 +200,144 @@ public final class ClienteGUI extends JFrame {
 
     private JPanel painelLogin() {
         JPanel p = new JPanel(new GridBagLayout());
+        p.setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
         GridBagConstraints g = grade();
-        addLinha(p, g, 0, "Email:", loginEmail);
-        addLinha(p, g, 1, "Senha:", loginSenha);
+        campo(p, g, 0, "E-mail:", loginEmail);
+        campo(p, g, 1, "Senha:", loginSenha);
         g.gridx = 1;
         g.gridy = 2;
-        g.anchor = GridBagConstraints.WEST;
+        g.insets = new Insets(14, 6, 4, 6);
         p.add(botaoEntrar, g);
-        return p;
+        return envolver(p);
     }
 
     private JPanel painelCadastro() {
         JPanel p = new JPanel(new GridBagLayout());
+        p.setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
         GridBagConstraints g = grade();
-        addLinha(p, g, 0, "Email:", cadEmail);
-        addLinha(p, g, 1, "Usuario:", cadUsuario);
-        addLinha(p, g, 2, "Senha:", cadSenha);
+        campo(p, g, 0, "E-mail:", cadEmail);
+        campo(p, g, 1, "Usuário:", cadUsuario);
+        campo(p, g, 2, "Senha:", cadSenha);
         g.gridx = 1;
         g.gridy = 3;
-        g.anchor = GridBagConstraints.WEST;
+        g.insets = new Insets(14, 6, 4, 6);
         p.add(botaoCadastrar, g);
         g.gridy = 4;
-        JLabel dica = new JLabel("Usuario: so letras minusculas. Senha: letras e numeros.");
-        dica.setFont(dica.getFont().deriveFont(Font.ITALIC, 11f));
-        p.add(dica, g);
-        return p;
+        g.insets = new Insets(4, 6, 4, 6);
+        p.add(Estilo.rodape("Usuário: apenas letras minúsculas, sem números nem espaços."), g);
+        g.gridy = 5;
+        p.add(Estilo.rodape("Senha: apenas letras e números, até 20 caracteres."), g);
+        return envolver(p);
     }
 
     private JPanel painelSessao() {
-        JPanel dados = new JPanel(new GridBagLayout());
-        dados.setBorder(BorderFactory.createTitledBorder("Meus dados (read_user)"));
+        JPanel dados = Estilo.grupo("Meus dados");
+        dados.setLayout(new GridBagLayout());
         GridBagConstraints g = grade();
-        addLinha(dados, g, 0, "Usuario:", dadosUsuario);
-        addLinha(dados, g, 1, "Email:", dadosEmail);
-        addLinha(dados, g, 2, "Perfil:", dadosRole);
-        addLinha(dados, g, 3, "Cadastrado em:", dadosCriadoEm);
+        rotuloValor(dados, g, 0, "Usuário:", dadosUsuario);
+        rotuloValor(dados, g, 1, "E-mail:", dadosEmail);
+        rotuloValor(dados, g, 2, "Perfil:", dadosPerfil);
+        rotuloValor(dados, g, 3, "Cadastrado em:", dadosCriadoEm);
         g.gridx = 1;
         g.gridy = 4;
+        g.insets = new Insets(12, 6, 2, 6);
         dados.add(botaoRecarregar, g);
 
-        JPanel alterar = new JPanel(new GridBagLayout());
-        alterar.setBorder(BorderFactory.createTitledBorder(
-                "Alterar (update_user) - deixe em branco o que nao quiser mudar"));
+        JPanel alterar = Estilo.grupo("Alterar cadastro");
+        alterar.setLayout(new GridBagLayout());
         GridBagConstraints g2 = grade();
-        addLinha(alterar, g2, 0, "Novo usuario:", novoUsuario);
-        addLinha(alterar, g2, 1, "Nova senha:", novaSenha);
+        campo(alterar, g2, 0, "Novo usuário:", novoUsuario);
+        campo(alterar, g2, 1, "Nova senha:", novaSenha);
         g2.gridx = 1;
         g2.gridy = 2;
+        g2.insets = new Insets(12, 6, 2, 6);
         alterar.add(botaoSalvar, g2);
         g2.gridy = 3;
-        JLabel dica = new JLabel("O email nao pode ser alterado depois do cadastro.");
-        dica.setFont(dica.getFont().deriveFont(Font.ITALIC, 11f));
-        alterar.add(dica, g2);
+        g2.insets = new Insets(6, 6, 2, 6);
+        alterar.add(Estilo.rodape("Deixe em branco o que não quiser alterar."), g2);
+        g2.gridy = 4;
+        alterar.add(Estilo.rodape("O e-mail não pode ser alterado depois do cadastro."), g2);
 
         JPanel acoes = new JPanel();
         acoes.setLayout(new BoxLayout(acoes, BoxLayout.X_AXIS));
         acoes.add(botaoSair);
-        acoes.add(Box.createHorizontalStrut(8));
-        acoes.add(botaoExcluir);
         acoes.add(Box.createHorizontalGlue());
+        acoes.add(botaoExcluir);
 
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        dados.setAlignmentX(LEFT_ALIGNMENT);
-        alterar.setAlignmentX(LEFT_ALIGNMENT);
-        acoes.setAlignmentX(LEFT_ALIGNMENT);
-        p.add(dados);
-        p.add(Box.createVerticalStrut(10));
-        p.add(alterar);
-        p.add(Box.createVerticalStrut(10));
-        p.add(acoes);
-        p.add(Box.createVerticalGlue());
+        // Empilhamento com GridBagLayout, e nao BoxLayout: o BoxLayout vertical
+        // estica cada componente ate o tamanho maximo dele e acabava espremendo
+        // o ultimo grupo, escondendo os botoes de sair e excluir.
+        JPanel p = new JPanel(new GridBagLayout());
+        GridBagConstraints pilha = new GridBagConstraints();
+        pilha.gridx = 0;
+        pilha.weightx = 1.0;
+        pilha.fill = GridBagConstraints.HORIZONTAL;
+        pilha.insets = new Insets(0, 0, 12, 0);
+
+        pilha.gridy = 0;
+        p.add(dados, pilha);
+        pilha.gridy = 1;
+        p.add(alterar, pilha);
+        pilha.gridy = 2;
+        pilha.insets = new Insets(2, 0, 0, 0);
+        p.add(acoes, pilha);
+
+        // Espacador que absorve a altura sobrando e mantem os grupos no alto.
+        pilha.gridy = 3;
+        pilha.weighty = 1.0;
+        pilha.fill = GridBagConstraints.BOTH;
+        p.add(new JPanel(), pilha);
         return p;
+    }
+
+    /** Envolve o formulário para que ele fique no alto, e não centralizado. */
+    private JPanel envolver(JPanel interno) {
+        JPanel fora = new JPanel(new BorderLayout());
+        fora.add(interno, BorderLayout.NORTH);
+        return fora;
     }
 
     private GridBagConstraints grade() {
         GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(4, 6, 4, 6);
+        g.insets = new Insets(5, 6, 5, 6);
         g.anchor = GridBagConstraints.WEST;
         return g;
     }
 
-    private void addLinha(JPanel painel, GridBagConstraints g, int linha, String rotulo,
-                          java.awt.Component campo) {
-        g.gridx = 0;
-        g.gridy = linha;
-        painel.add(new JLabel(rotulo), g);
-        g.gridx = 1;
-        painel.add(campo, g);
+    private void campo(JPanel painel, GridBagConstraints g, int linha, String rotulo,
+                       JTextField entrada) {
+        entrada.setPreferredSize(TAMANHO_CAMPO);
+        rotuloValor(painel, g, linha, rotulo, entrada);
     }
 
-    // ------------------------------------------------------------------ acoes
+    /**
+     * Uma linha "rotulo: valor".
+     *
+     * A terceira coluna e um espacador com weightx = 1: sem ele o GridBagLayout
+     * centraliza o conteudo no painel, e a tela fica com os campos boiando no
+     * meio enquanto todo o resto esta alinhado a esquerda.
+     */
+    private void rotuloValor(JPanel painel, GridBagConstraints g, int linha, String rotulo,
+                             Component valor) {
+        g.gridx = 0;
+        g.gridy = linha;
+        g.weightx = 0;
+        g.fill = GridBagConstraints.NONE;
+        painel.add(new JLabel(rotulo), g);
+
+        g.gridx = 1;
+        painel.add(valor, g);
+
+        g.gridx = 2;
+        g.weightx = 1.0;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        painel.add(Box.createHorizontalGlue(), g);
+
+        g.weightx = 0;
+        g.fill = GridBagConstraints.NONE;
+    }
+
+    // ------------------------------------------------------------------ ações
 
     private void ligarAcoes() {
         botaoConectar.addActionListener(e -> conectar());
@@ -268,6 +345,7 @@ public final class ClienteGUI extends JFrame {
         botaoEntrar.addActionListener(e -> entrar());
         loginSenha.addActionListener(e -> entrar());
         botaoCadastrar.addActionListener(e -> cadastrar());
+        cadSenha.addActionListener(e -> cadastrar());
         botaoRecarregar.addActionListener(e -> lerCadastro());
         botaoSalvar.addActionListener(e -> salvarAlteracoes());
         botaoExcluir.addActionListener(e -> excluirCadastro());
@@ -280,7 +358,7 @@ public final class ClienteGUI extends JFrame {
         try {
             porta = Integer.parseInt(campoPorta.getText().trim());
         } catch (NumberFormatException e) {
-            erro("Porta invalida: informe um numero.");
+            erro("Porta inválida: informe um número.");
             return;
         }
         if (ip.isEmpty()) {
@@ -294,7 +372,7 @@ public final class ClienteGUI extends JFrame {
                 conexao.conectar(ip, porta);
                 registrar("conectado em " + ip + ":" + porta);
                 SwingUtilities.invokeLater(() -> {
-                    rotuloStatus.setText("Conectado em " + ip + ":" + porta);
+                    indicador.atualizar("Conectado em " + ip + ":" + porta, true);
                     botaoDesconectar.setEnabled(true);
                     campoIp.setEnabled(false);
                     campoPorta.setEnabled(false);
@@ -304,7 +382,7 @@ public final class ClienteGUI extends JFrame {
                 registrar("falha ao conectar: " + e.getMessage());
                 SwingUtilities.invokeLater(() -> {
                     botaoConectar.setEnabled(true);
-                    erro("Nao foi possivel conectar em " + ip + ":" + porta + "\n" + e.getMessage());
+                    erro("Não foi possível conectar em " + ip + ":" + porta + "\n" + e.getMessage());
                 });
             }
         });
@@ -314,12 +392,13 @@ public final class ClienteGUI extends JFrame {
         conexao.fechar();
         token = null;
         registrar("desconectado");
-        rotuloStatus.setText("Desconectado");
+        indicador.atualizar("Desconectado", false);
         botaoConectar.setEnabled(true);
         botaoDesconectar.setEnabled(false);
         campoIp.setEnabled(true);
         campoPorta.setEnabled(true);
         habilitarOperacoes(false);
+        limparSessao();
         cartas.show(painelCartas, CARTAO_ACESSO);
     }
 
@@ -330,15 +409,15 @@ public final class ClienteGUI extends JFrame {
         req.addProperty("password", texto(cadSenha));
 
         trocar(req, resposta -> {
-            String status = campo(resposta, "status");
             informar(resposta);
-            if ("201".equals(status)) {
-                // O cadastro nao cria sessao: o proximo passo e o login.
+            if ("201".equals(campo(resposta, "status"))) {
+                // O cadastro não cria sessão: o próximo passo é o login.
                 loginEmail.setText(cadEmail.getText().trim());
                 cadEmail.setText("");
                 cadUsuario.setText("");
                 cadSenha.setText("");
                 abasAcesso.setSelectedIndex(0);
+                loginSenha.requestFocusInWindow();
             }
         });
     }
@@ -368,7 +447,8 @@ public final class ClienteGUI extends JFrame {
             if ("200".equals(campo(resposta, "status"))) {
                 dadosUsuario.setText(campo(resposta, "user"));
                 dadosEmail.setText(campo(resposta, "email"));
-                dadosRole.setText(campo(resposta, "role"));
+                dadosPerfil.setText("admin".equals(campo(resposta, "role"))
+                        ? "Administrador" : "Usuário comum");
                 dadosCriadoEm.setText(campo(resposta, "created_at"));
             } else {
                 informar(resposta);
@@ -386,7 +466,7 @@ public final class ClienteGUI extends JFrame {
 
         JsonObject req = requisicao("update_user");
         req.addProperty("token", token);
-        // Regra 2.11: string vazia significa "nao alterar".
+        // Regra 2.11: string vazia significa "não alterar".
         req.addProperty("user", usuario);
         req.addProperty("password", senha);
 
@@ -403,8 +483,8 @@ public final class ClienteGUI extends JFrame {
     private void excluirCadastro() {
         JPasswordField campoSenha = new JPasswordField(16);
         int escolha = JOptionPane.showConfirmDialog(this,
-                new Object[]{"Esta acao remove seu cadastro definitivamente.",
-                        "Confirme a senha:", campoSenha},
+                new Object[]{"Esta ação remove seu cadastro definitivamente.",
+                        "Confirme a senha para continuar:", campoSenha},
                 "Excluir cadastro", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
         if (escolha != JOptionPane.OK_OPTION) {
             return;
@@ -430,7 +510,7 @@ public final class ClienteGUI extends JFrame {
 
         trocar(req, resposta -> {
             informar(resposta);
-            // O token local e descartado mesmo em 401: nos dois casos ele nao
+            // O token local é descartado mesmo em 401: nos dois casos ele não
             // serve mais para nada.
             token = null;
             limparSessao();
@@ -440,7 +520,7 @@ public final class ClienteGUI extends JFrame {
 
     // ------------------------------------------------------------------ apoio
 
-    /** Cria a requisicao ja com 'op' como primeira chave (regra 2.1). */
+    /** Cria a requisição já com 'op' como primeira chave (regra 2.1). */
     private JsonObject requisicao(String op) {
         JsonObject req = new JsonObject();
         req.addProperty("op", op);
@@ -449,7 +529,7 @@ public final class ClienteGUI extends JFrame {
 
     /**
      * Envia fora da EDT, registra os dois lados no terminal e entrega a resposta
-     * ao tratador, ja de volta na EDT.
+     * ao tratador, já de volta na EDT.
      */
     private void trocar(JsonObject requisicao, Consumer<JsonObject> aoResponder) {
         if (!conexao.estaConectado()) {
@@ -472,7 +552,7 @@ public final class ClienteGUI extends JFrame {
 
                 JsonObject objeto = JsonParser.parseString(resposta).getAsJsonObject();
                 SwingUtilities.invokeLater(() -> {
-                    // Reacao ao 401 definida na aba "Codigos de Status": descarta
+                    // Reação ao 401 definida na aba "Codigos de Status": descarta
                     // o token local e volta para a tela de login.
                     if ("401".equals(campo(objeto, "status")) && token != null) {
                         token = null;
@@ -483,7 +563,8 @@ public final class ClienteGUI extends JFrame {
                 });
             } catch (Exception e) {
                 registrar("falha na troca: " + e.getMessage());
-                SwingUtilities.invokeLater(() -> erro("Falha na comunicacao:\n" + e.getMessage()));
+                SwingUtilities.invokeLater(
+                        () -> erro("Falha na comunicação com o servidor:\n" + e.getMessage()));
             } finally {
                 SwingUtilities.invokeLater(() -> habilitarOperacoes(conexao.estaConectado()));
             }
@@ -493,20 +574,31 @@ public final class ClienteGUI extends JFrame {
     private void limparSessao() {
         dadosUsuario.setText("-");
         dadosEmail.setText("-");
-        dadosRole.setText("-");
+        dadosPerfil.setText("-");
         dadosCriadoEm.setText("-");
         novoUsuario.setText("");
         novaSenha.setText("");
     }
 
-    /** Mostra o 'message' que veio do servidor, com o icone conforme o status. */
+    /**
+     * Mostra a mensagem do servidor, acentuada para leitura.
+     *
+     * O texto exibido passa por {@link Mensagens}; o texto original continua
+     * visível no terminal, dentro do JSON cru.
+     */
     private void informar(JsonObject resposta) {
         String status = campo(resposta, "status");
-        String mensagem = campo(resposta, "message");
+        String op = campo(resposta, "op");
         boolean sucesso = status != null && status.startsWith("2");
-        JOptionPane.showMessageDialog(this,
-                (mensagem == null ? "Resposta sem mensagem." : mensagem) + "\n(status " + status + ")",
-                sucesso ? "Sucesso" : "Atencao",
+
+        StringBuilder texto = new StringBuilder(Mensagens.paraExibicao(campo(resposta, "message")));
+        String dica = Mensagens.dica(status, op);
+        if (dica != null) {
+            texto.append("\n\n").append(dica);
+        }
+
+        JOptionPane.showMessageDialog(this, texto.toString(),
+                sucesso ? "Tudo certo" : "Atenção",
                 sucesso ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
     }
 
@@ -527,7 +619,12 @@ public final class ClienteGUI extends JFrame {
         botaoSair.setEnabled(habilitado);
     }
 
-    /** Log no terminal. System.out ja e sincronizado, entao serve a qualquer thread. */
+    /**
+     * Log no terminal, sem acentos de propósito: o console de outro sistema
+     * operacional pode não estar em UTF-8, e caractere quebrado no log durante a
+     * avaliação atrapalha mais do que a falta do acento. Na janela, onde o Swing
+     * cuida da codificação, o texto é acentuado normalmente.
+     */
     private void registrar(String linha) {
         System.out.println(LocalTime.now().format(HORA) + "  " + linha);
     }
@@ -541,7 +638,7 @@ public final class ClienteGUI extends JFrame {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignorado) {
-            // Segue com o visual padrao do Swing.
+            // Segue com o visual padrão do Swing.
         }
         SwingUtilities.invokeLater(() -> new ClienteGUI().setVisible(true));
     }

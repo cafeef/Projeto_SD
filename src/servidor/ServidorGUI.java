@@ -1,8 +1,8 @@
 package servidor;
 
 import servidor.dao.Banco;
+import ui.Estilo;
 
-import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -10,6 +10,7 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.awt.BorderLayout;
@@ -22,32 +23,25 @@ import java.net.BindException;
 import java.sql.SQLException;
 
 /**
- * Interface grafica do servidor: controle da porta e do estado de escuta.
+ * Interface gráfica do servidor: controle da porta e do estado de escuta.
  *
  * Atende a obs. 4 da grade -- campo para digitar a porta de escuta. As mensagens
- * JSON trocadas (obs. 3) saem no TERMINAL que executa a aplicacao, nao aqui.
+ * JSON trocadas (obs. 3) saem no TERMINAL que executa a aplicação, não aqui.
+ *
+ * O texto desta tela usa acentuação normal. As mensagens do protocolo, que
+ * trafegam na rede, continuam sem acento por exigência da regra 2.8.
  */
 public final class ServidorGUI extends JFrame {
 
     private static final long serialVersionUID = 1L;
 
-    private final JTextFieldPorta campoPorta = new JTextFieldPorta();
-    private final JButton botaoIniciar = new JButton("Iniciar");
+    private final JTextField campoPorta = new JTextField("5000", 6);
+    private final JButton botaoIniciar = Estilo.botaoPrincipal("Iniciar");
     private final JButton botaoParar = new JButton("Parar");
-    private final JLabel rotuloStatus = new JLabel("Parado");
-    private final JLabel rotuloConectados = new JLabel("Clientes conectados: 0");
+    private final Estilo.Indicador indicador = new Estilo.Indicador("Parado", false);
+    private final JLabel rotuloConectados = new JLabel("Nenhum cliente conectado");
 
     private transient ServidorSocket servidor;
-
-    /** Campo de porta com largura fixa, so para nao poluir o construtor. */
-    private static final class JTextFieldPorta extends javax.swing.JTextField {
-        private static final long serialVersionUID = 1L;
-
-        JTextFieldPorta() {
-            super("5000", 6);
-            setMaximumSize(new Dimension(90, 30));
-        }
-    }
 
     public ServidorGUI() {
         super("Servidor - Reserva de Salas");
@@ -56,6 +50,7 @@ public final class ServidorGUI extends JFrame {
 
         botaoIniciar.addActionListener(e -> iniciarServidor());
         botaoParar.addActionListener(e -> pararServidor());
+        campoPorta.addActionListener(e -> iniciarServidor());
         botaoParar.setEnabled(false);
 
         addWindowListener(new WindowAdapter() {
@@ -68,59 +63,76 @@ public final class ServidorGUI extends JFrame {
             }
         });
 
-        setSize(560, 220);
+        pack();
+        setSize(Math.max(getWidth(), 620), Math.max(getHeight(), 330));
+        setMinimumSize(getSize());
         setLocationRelativeTo(null);
     }
 
     private void montarTela() {
-        JPanel linhaPorta = new JPanel();
-        linhaPorta.setLayout(new BoxLayout(linhaPorta, BoxLayout.X_AXIS));
-        linhaPorta.add(new JLabel("Porta de escuta: "));
-        linhaPorta.add(campoPorta);
-        linhaPorta.add(Box.createHorizontalStrut(12));
-        linhaPorta.add(botaoIniciar);
-        linhaPorta.add(Box.createHorizontalStrut(6));
-        linhaPorta.add(botaoParar);
-        linhaPorta.add(Box.createHorizontalGlue());
+        JLabel titulo = Estilo.titulo("Servidor");
+        JLabel subtitulo = Estilo.subtitulo("Sistema de Reserva de Salas de Reunião/Estudo");
 
-        rotuloStatus.setFont(rotuloStatus.getFont().deriveFont(Font.BOLD));
+        JPanel cabecalho = new JPanel();
+        cabecalho.setLayout(new BoxLayout(cabecalho, BoxLayout.Y_AXIS));
+        Estilo.alinharEsquerda(titulo, subtitulo);
+        cabecalho.add(titulo);
+        cabecalho.add(Box.createVerticalStrut(2));
+        cabecalho.add(subtitulo);
 
-        JPanel estado = new JPanel();
+        JPanel conexao = Estilo.grupo("Conexão");
+        conexao.setLayout(new BoxLayout(conexao, BoxLayout.X_AXIS));
+        conexao.add(new JLabel("Porta de escuta: "));
+        campoPorta.setMaximumSize(new Dimension(100, 32));
+        campoPorta.setHorizontalAlignment(JTextField.CENTER);
+        conexao.add(campoPorta);
+        conexao.add(Box.createHorizontalStrut(14));
+        conexao.add(botaoIniciar);
+        conexao.add(Box.createHorizontalStrut(8));
+        conexao.add(botaoParar);
+        conexao.add(Box.createHorizontalGlue());
+
+        JPanel estado = Estilo.grupo("Estado");
         estado.setLayout(new BoxLayout(estado, BoxLayout.Y_AXIS));
-        estado.setAlignmentX(LEFT_ALIGNMENT);
-        estado.add(rotuloStatus);
-        estado.add(Box.createVerticalStrut(4));
+        rotuloConectados.setForeground(Estilo.CINZA);
+        Estilo.alinharEsquerda(indicador, rotuloConectados);
+        estado.add(indicador);
+        estado.add(Box.createVerticalStrut(6));
         estado.add(rotuloConectados);
 
-        JLabel aviso = new JLabel(
+        JLabel rodape = Estilo.rodape(
                 "As mensagens JSON trocadas aparecem no terminal que executa o servidor.");
-        aviso.setFont(aviso.getFont().deriveFont(Font.ITALIC));
 
         JPanel conteudo = new JPanel();
         conteudo.setLayout(new BoxLayout(conteudo, BoxLayout.Y_AXIS));
-        conteudo.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
-        linhaPorta.setAlignmentX(LEFT_ALIGNMENT);
-        aviso.setAlignmentX(LEFT_ALIGNMENT);
-        conteudo.add(linhaPorta);
-        conteudo.add(Box.createVerticalStrut(16));
+        conteudo.setBorder(Estilo.margem());
+        Estilo.alinharEsquerda(cabecalho, conexao, estado, rodape);
+        conteudo.add(cabecalho);
+        conteudo.add(Box.createVerticalStrut(18));
+        conteudo.add(conexao);
+        conteudo.add(Box.createVerticalStrut(12));
         conteudo.add(estado);
         conteudo.add(Box.createVerticalGlue());
-        conteudo.add(aviso);
+        conteudo.add(Box.createVerticalStrut(12));
+        conteudo.add(rodape);
 
         setLayout(new BorderLayout());
         add(conteudo, BorderLayout.CENTER);
     }
 
     private void iniciarServidor() {
+        if (servidor != null) {
+            return;
+        }
         int porta;
         try {
             porta = Integer.parseInt(campoPorta.getText().trim());
         } catch (NumberFormatException e) {
-            erro("Porta invalida: informe um numero.");
+            erro("Porta inválida: informe um número.");
             return;
         }
         if (porta < 1 || porta > 65535) {
-            erro("Porta invalida: use um valor entre 1 e 65535.");
+            erro("Porta inválida: use um valor entre 1 e 65535.");
             return;
         }
 
@@ -134,25 +146,25 @@ public final class ServidorGUI extends JFrame {
             return;
         }
 
-        // O log vai para o terminal; a janela so acompanha o estado.
+        // O log vai para o terminal; a janela só acompanha o estado.
         servidor = new ServidorSocket(porta, ServidorConsole.criarDispatcher(),
                 RegistradorLog.CONSOLE);
         servidor.setAoMudarConectados(quantos -> SwingUtilities.invokeLater(
-                () -> rotuloConectados.setText("Clientes conectados: " + quantos)));
+                () -> rotuloConectados.setText(descreverConectados(quantos))));
 
         try {
             servidor.iniciar();
         } catch (BindException e) {
-            erro("A porta " + porta + " ja esta em uso. Escolha outra.");
+            erro("A porta " + porta + " já está em uso. Escolha outra.");
             servidor = null;
             return;
         } catch (IOException e) {
-            erro("Nao foi possivel abrir a porta " + porta + ":\n" + e.getMessage());
+            erro("Não foi possível abrir a porta " + porta + ":\n" + e.getMessage());
             servidor = null;
             return;
         }
 
-        rotuloStatus.setText("Escutando na porta " + porta);
+        indicador.atualizar("Escutando na porta " + porta, true);
         botaoIniciar.setEnabled(false);
         botaoParar.setEnabled(true);
         campoPorta.setEnabled(false);
@@ -163,18 +175,25 @@ public final class ServidorGUI extends JFrame {
             servidor.parar();
             servidor = null;
         }
-        rotuloStatus.setText("Parado");
-        rotuloConectados.setText("Clientes conectados: 0");
+        indicador.atualizar("Parado", false);
+        rotuloConectados.setText(descreverConectados(0));
         botaoIniciar.setEnabled(true);
         botaoParar.setEnabled(false);
         campoPorta.setEnabled(true);
     }
 
+    private static String descreverConectados(int quantos) {
+        if (quantos == 0) {
+            return "Nenhum cliente conectado";
+        }
+        return quantos == 1 ? "1 cliente conectado" : quantos + " clientes conectados";
+    }
+
     /**
      * Mostra o erro na janela E no terminal.
      *
-     * Como o log das mensagens vive no terminal, uma falha que aparecesse so na
-     * caixa de dialogo sumiria assim que fosse fechada, sem deixar rastro em
+     * Como o log das mensagens vive no terminal, uma falha que aparecesse só na
+     * caixa de diálogo sumiria assim que fosse fechada, sem deixar rastro em
      * lugar nenhum -- justamente quando se precisa dele.
      */
     private void erro(String mensagem) {
@@ -186,7 +205,7 @@ public final class ServidorGUI extends JFrame {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignorado) {
-            // Segue com o visual padrao do Swing.
+            // Segue com o visual padrão do Swing.
         }
         SwingUtilities.invokeLater(() -> new ServidorGUI().setVisible(true));
     }
