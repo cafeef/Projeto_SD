@@ -16,7 +16,7 @@ LOG="$(mktemp -t servidor-teste-XXXXXX.log)"
 echo "### Compilando"
 ./compilar.sh
 mkdir -p bin-testes
-javac --release 21 -encoding UTF-8 -cp "bin:$CP_LIB" -d bin-testes testes/*.java
+javac --release 17 -encoding UTF-8 -cp "bin:$CP_LIB" -d bin-testes testes/*.java
 echo
 
 echo "### Validacao de campos (sem rede)"
