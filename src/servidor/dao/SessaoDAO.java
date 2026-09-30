@@ -145,6 +145,31 @@ public final class SessaoDAO {
         }
     }
 
+    /**
+     * Invalida TODAS as sessoes ativas. Chamado quando o servidor comeca a
+     * escutar (ver {@link servidor.ServidorSocket#iniciar()}).
+     *
+     * Quando o servidor cai, todas as conexoes caem junto: nenhum cliente tem
+     * como continuar uma sessao aberta antes. Sem isso, as sessoes anteriores
+     * continuariam ativas no banco e o usuario levaria 409 "Usuario ja possui
+     * sessao ativa" ao tentar entrar de novo, sem saida a nao ser esperar os 30
+     * minutos de expiracao -- porque o token da sessao antiga se perdeu junto
+     * com o cliente.
+     *
+     * Nao conflita com o protocolo: a regra 3.4 exige apenas que um token
+     * invalidado nunca volte a valer, e a reacao do cliente ao 401 ja esta
+     * definida na aba "Codigos de Status" (descartar o token e voltar ao login).
+     *
+     * @return quantas sessoes foram encerradas
+     */
+    public static int invalidarTodas() throws SQLException {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE sessoes SET ativa = FALSE WHERE ativa = TRUE")) {
+            return ps.executeUpdate();
+        }
+    }
+
     /** Envelhece uma sessao artificialmente. Existe para os testes de expiracao. */
     public static void envelhecerParaTeste(String token, int minutos) throws SQLException {
         try (Connection c = Banco.conexao();

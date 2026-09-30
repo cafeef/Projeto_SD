@@ -106,6 +106,28 @@ public class VerificaBanco {
         confere("token invalidado nao volta a valer", SessaoDAO.validarERenovar(token2) == null);
         confere("invalidar duas vezes devolve false", !SessaoDAO.invalidar(token2));
 
+        // --- reinicio do servidor encerra as sessoes anteriores ---
+        int idMaria = UsuarioDAO.buscarPorUsuario("maria").getId();
+        String tokenA = SessaoDAO.criar(idJoao);
+        String tokenB = SessaoDAO.criar(idMaria);
+        confere("duas sessoes ativas antes do reinicio",
+                SessaoDAO.validarERenovar(tokenA) != null
+                        && SessaoDAO.validarERenovar(tokenB) != null);
+
+        // Nao se fixa o numero exato: testes anteriores deixaram outras sessoes
+        // ativas, e o que importa e que o reinicio encerra TODAS elas.
+        int encerradas = SessaoDAO.invalidarTodas();
+        confere("o reinicio encerra as sessoes ativas (encerrou " + encerradas + ")",
+                encerradas >= 2);
+        confere("token de antes do reinicio nao vale mais",
+                SessaoDAO.validarERenovar(tokenA) == null);
+        confere("o outro token tambem nao vale",
+                SessaoDAO.validarERenovar(tokenB) == null);
+        // Este e o ponto da mudanca: sem isso, o login seguinte levaria 409.
+        confere("usuario pode entrar de novo depois do reinicio, sem 409",
+                !SessaoDAO.temSessaoAtiva(idJoao) && !SessaoDAO.temSessaoAtiva(idMaria));
+        confere("encerrar de novo nao encontra nada", SessaoDAO.invalidarTodas() == 0);
+
         // --- remocao (delete_user) ---
         String token3 = SessaoDAO.criar(idJoao);
         confere("remocao do cadastro funciona", UsuarioDAO.remover(idJoao));

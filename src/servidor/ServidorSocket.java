@@ -1,6 +1,9 @@
 package servidor;
 
+import servidor.dao.SessaoDAO;
+
 import java.io.IOException;
+import java.sql.SQLException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,6 +52,21 @@ public class ServidorSocket {
         }
         serverSocket = new ServerSocket(porta);
         rodando = true;
+
+        // Sessoes de antes nao sobrevivem ao servidor: quando ele para, todas as
+        // conexoes caem e nenhum cliente consegue continuar de onde parou. Fica
+        // aqui, e nao na abertura do banco, para cobrir tambem o caso de parar e
+        // iniciar de novo pela tela, sem fechar a aplicacao.
+        try {
+            int encerradas = SessaoDAO.invalidarTodas();
+            if (encerradas > 0) {
+                log.registrar("Sessoes anteriores encerradas: " + encerradas);
+            }
+        } catch (SQLException e) {
+            log.registrar("Aviso: nao foi possivel encerrar as sessoes anteriores: "
+                    + e.getMessage());
+        }
+
         log.registrar("Servidor escutando na porta " + porta);
 
         threadAceite = new Thread(this::aceitar, "aceite-" + porta);

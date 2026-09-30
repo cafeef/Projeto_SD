@@ -99,6 +99,13 @@ Ele existe porque todo cadastro feito por `register` nasce com perfil `user`, e
 sem um administrador não haveria como exercitar as regras que dependem desse
 perfil. Para começar do zero, basta apagar a pasta `dados/`.
 
+**Os cadastros sobrevivem ao desligamento do servidor; as sessões, não.** Toda
+vez que o servidor passa a escutar, as sessões anteriores são encerradas — afinal
+todas as conexões caíram junto com ele. Sem isso, quem estava logado antes
+receberia `409 Usuario ja possui sessao ativa` ao tentar entrar de novo, sem
+saída a não ser esperar os 30 minutos de expiração, já que o token da sessão
+anterior se perdeu com o cliente.
+
 ## Estrutura
 
 ```
