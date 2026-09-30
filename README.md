@@ -69,9 +69,14 @@ run-servidor.bat
 run-cliente.bat
 ```
 
-Execute pelo **Prompt de Comando**, não por duplo clique: os scripts usam `java`
-e não `javaw` justamente para manter a janela de console aberta, que é onde as
-mensagens JSON aparecem.
+No Prompt de Comando, digite o nome do arquivo direto — **sem `./`**, que é
+sintaxe de Linux. No PowerShell, use `.\compilar.bat`. Para abrir um terminal já
+na pasta certa, digite `cmd` na barra de endereço do Explorador de Arquivos.
+
+Os `run-*.bat` também funcionam por duplo clique: eles usam `java` e não `javaw`,
+então a janela de console fica aberta enquanto a aplicação roda — e é nela que as
+mensagens JSON aparecem. Já o `compilar.bat` é melhor rodar pelo terminal, para
+conseguir ler as mensagens caso a compilação falhe.
 
 A suíte de testes (`testar.sh`) é um script de shell e precisa de Git Bash ou
 WSL. As aplicações em si não precisam de nada disso.

@@ -21,6 +21,9 @@ del fontes.tmp
 if not "%ERRO%"=="0" (
     echo.
     echo Falha na compilacao.
+    rem pause para que a mensagem de erro sobreviva ao duplo clique, que
+    rem fecharia a janela imediatamente.
+    pause
     exit /b %ERRO%
 )
 echo Compilado em bin\ ^(release 21^).
