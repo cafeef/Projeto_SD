@@ -53,6 +53,29 @@ Iniciar o **cliente** (informe IP e porta do servidor e clique em Conectar):
 > que executa cada aplicação, não nas janelas. Abrindo por duplo clique, o log
 > não aparece em lugar nenhum.
 
+### No Windows
+
+Os mesmos comandos existem como `.bat`, com o separador de classpath correto:
+
+```bat
+compilar.bat
+```
+
+```bat
+run-servidor.bat
+```
+
+```bat
+run-cliente.bat
+```
+
+Execute pelo **Prompt de Comando**, não por duplo clique: os scripts usam `java`
+e não `javaw` justamente para manter a janela de console aberta, que é onde as
+mensagens JSON aparecem.
+
+A suíte de testes (`testar.sh`) é um script de shell e precisa de Git Bash ou
+WSL. As aplicações em si não precisam de nada disso.
+
 Há também versões em linha de comando, úteis para testar rapidamente ou para
 conversar com o servidor de outro grupo:
 
@@ -82,6 +105,25 @@ servidor.
 Os testes de transporte e de operações montam os bytes na mão, **sem usar as
 classes do projeto** — reproduzem a situação do teste de interoperabilidade, em
 que o outro lado não compartilha código nenhum com o nosso.
+
+## Levando o projeto para outra máquina
+
+A pasta inteira pode ser copiada — inclusive entre sistemas operacionais
+diferentes. As bibliotecas estão em `lib/` e o banco é embutido, então não há
+nada instalado fora do projeto.
+
+O que conferir no destino:
+
+1. **JDK 21 ou superior instalado** (`java -version`).
+2. **Recompilar** com `compilar.sh` ou `compilar.bat`. O conteúdo de `bin/` até
+   funcionaria como está, já que bytecode é portável, mas recompilar confirma de
+   saída que o JDK do destino dá conta.
+3. **A pasta `dados/`** pode ser copiada ou deixada para trás: se não existir, o
+   banco é recriado do zero na primeira execução.
+4. **Firewall**, se o cliente e o servidor ficarem em máquinas diferentes. O
+   Windows bloqueia conexões de entrada por padrão e vai pedir liberação na
+   primeira vez que o servidor abrir a porta — é preciso permitir, ou nenhum
+   cliente de fora consegue conectar.
 
 ## Banco de dados
 

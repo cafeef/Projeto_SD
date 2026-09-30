@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Scripts precisam manter a terminacao de linha do seu sistema:
+# .sh com CRLF quebra no shell; .bat com LF confunde o cmd do Windows.
+*.sh  text eol=lf
+*.bat text eol=crlf
