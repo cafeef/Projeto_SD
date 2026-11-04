@@ -43,8 +43,16 @@ public final class ServidorGUI extends JFrame {
 
     private transient ServidorSocket servidor;
 
+    /** Se o console web do banco deve subir junto com o servidor. */
+    private final boolean consoleDoBanco;
+
     public ServidorGUI() {
+        this(false);
+    }
+
+    public ServidorGUI(boolean consoleDoBanco) {
         super("Servidor - Reserva de Salas");
+        this.consoleDoBanco = consoleDoBanco;
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         montarTela();
 
@@ -140,6 +148,9 @@ public final class ServidorGUI extends JFrame {
             if (!Banco.estaIniciado()) {
                 Banco.iniciar();
                 RegistradorLog.CONSOLE.registrar("Banco de dados aberto em dados/reservasalas.");
+                if (consoleDoBanco) {
+                    ServidorConsole.abrirConsoleDoBanco();
+                }
             }
         } catch (SQLException e) {
             erro("Falha ao abrir o banco de dados:\n" + e.getMessage());
@@ -207,6 +218,8 @@ public final class ServidorGUI extends JFrame {
         } catch (Exception ignorado) {
             // Segue com o visual padrão do Swing.
         }
-        SwingUtilities.invokeLater(() -> new ServidorGUI().setVisible(true));
+        // --console: abre a interface web do H2 quando o servidor iniciar.
+        boolean console = ServidorConsole.temArgumento(args, "--console");
+        SwingUtilities.invokeLater(() -> new ServidorGUI(console).setVisible(true));
     }
 }

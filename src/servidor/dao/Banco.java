@@ -1,5 +1,7 @@
 package servidor.dao;
 
+import org.h2.tools.Server;
+
 import servidor.Senhas;
 
 import java.io.File;
@@ -30,7 +32,13 @@ public final class Banco {
     private static final String USUARIO_BANCO = "sa";
     private static final String SENHA_BANCO = "";
 
+    /** Porta em que o H2 Console costuma atender. */
+    public static final int PORTA_CONSOLE_PADRAO = 8082;
+
     private static String url;
+
+    /** Console web do H2, no ar apenas quando o servidor sobe com --console. */
+    private static Server consoleWeb;
 
     private Banco() {
     }
@@ -76,6 +84,7 @@ public final class Banco {
 
     /** Fecha o banco de verdade, desfazendo o DB_CLOSE_DELAY=-1. */
     public static synchronized void encerrar() {
+        fecharConsoleWeb();
         if (url == null) {
             return;
         }
@@ -89,6 +98,48 @@ public final class Banco {
 
     public static synchronized boolean estaIniciado() {
         return url != null;
+    }
+
+    /** A URL JDBC em uso, para quem precisa informa-la na tela do console. */
+    public static synchronized String urlAtual() {
+        return url;
+    }
+
+    /** O usuario do banco, para a mesma tela. */
+    public static String usuarioBanco() {
+        return USUARIO_BANCO;
+    }
+
+    /**
+     * Sobe o H2 Console -- a interface web que ja vem dentro do proprio
+     * h2-*.jar, sem instalar nada -- e devolve o endereco para abrir no
+     * navegador.
+     *
+     * Ele roda na MESMA JVM do servidor de proposito. Em modo arquivo embutido o
+     * H2 tranca o arquivo do banco, e um programa de fora levaria o erro 90020
+     * (e o mesmo erro que iniciarComUrl traduz logo acima). Rodando aqui dentro,
+     * o console abre o banco pelo processo que ja o detem, e enxerga cada linha
+     * nova no instante em que ela e gravada.
+     *
+     * Sem -webAllowOthers ele escuta somente em localhost: ninguem na rede
+     * alcanca o banco. O -webDaemon mantem a thread do console em modo daemon,
+     * para ela nunca segurar o encerramento da JVM.
+     */
+    public static synchronized String abrirConsoleWeb(int porta) throws SQLException {
+        if (consoleWeb != null) {
+            return consoleWeb.getURL();
+        }
+        consoleWeb = Server.createWebServer(
+                "-webPort", String.valueOf(porta), "-webDaemon").start();
+        return consoleWeb.getURL();
+    }
+
+    /** Derruba o console web, se estiver no ar. */
+    public static synchronized void fecharConsoleWeb() {
+        if (consoleWeb != null) {
+            consoleWeb.stop();
+            consoleWeb = null;
+        }
     }
 
     private static void criarEsquema(Connection c) throws SQLException {

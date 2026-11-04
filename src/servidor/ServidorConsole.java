@@ -46,12 +46,7 @@ public class ServidorConsole {
 
         // --memoria: banco em memoria, sem criar nem travar o arquivo dados/.
         // E o que os testes automatizados usam.
-        boolean emMemoria = false;
-        for (String arg : args) {
-            if ("--memoria".equals(arg)) {
-                emMemoria = true;
-            }
-        }
+        boolean emMemoria = temArgumento(args, "--memoria");
         try {
             if (emMemoria) {
                 Banco.iniciarComUrl("jdbc:h2:mem:servidor;DB_CLOSE_DELAY=-1");
@@ -73,6 +68,12 @@ public class ServidorConsole {
             return;
         }
 
+        // --console: a interface web do H2 sobre este mesmo banco. Vem depois do
+        // iniciar() para nao anunciar um console de um servidor que desistiu.
+        if (temArgumento(args, "--console")) {
+            abrirConsoleDoBanco();
+        }
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             servidor.parar();
             Banco.encerrar();
@@ -83,6 +84,36 @@ public class ServidorConsole {
             Thread.currentThread().join();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Diz se a opcao veio na linha de comando. */
+    public static boolean temArgumento(String[] args, String alvo) {
+        for (String arg : args) {
+            if (alvo.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Sobe o console web do banco e explica como entrar nele.
+     *
+     * Uma falha aqui -- porta 8082 ocupada, tipicamente -- nao pode derrubar o
+     * servidor: o console e uma comodidade para inspecionar os dados, e nao
+     * parte do protocolo.
+     */
+    public static void abrirConsoleDoBanco() {
+        try {
+            Banco.abrirConsoleWeb(Banco.PORTA_CONSOLE_PADRAO);
+            System.out.println("Banco: console web em http://localhost:"
+                    + Banco.PORTA_CONSOLE_PADRAO);
+            System.out.println("Banco: na tela de login use a URL \"" + Banco.urlAtual()
+                    + "\", usuario \"" + Banco.usuarioBanco() + "\" e senha vazia.");
+        } catch (SQLException e) {
+            System.err.println("Banco: nao foi possivel abrir o console ("
+                    + e.getMessage() + "). O servidor segue normalmente.");
         }
     }
 

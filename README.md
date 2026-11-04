@@ -186,6 +186,46 @@ receberia `409 Usuario ja possui sessao ativa` ao tentar entrar de novo, sem
 saída a não ser esperar os 30 minutos de expiração, já que o token da sessão
 anterior se perdeu com o cliente.
 
+### Olhando o banco durante a execução
+
+```bash
+./run-servidor.sh --console
+```
+
+Sobe o servidor normalmente e, junto, o **H2 Console** — a interface web que já
+vem dentro de `lib/h2-2.5.250.jar`, sem instalar nada. O terminal imprime o
+endereço:
+
+```
+Banco: console web em http://localhost:8082
+Banco: na tela de login use a URL "jdbc:h2:file:./dados/reservasalas;DB_CLOSE_DELAY=-1", usuario "sa" e senha vazia.
+```
+
+Abra o endereço no navegador, cole a URL da segunda linha no campo **JDBC URL**,
+deixe `sa` no usuário e a senha em branco, e clique em *Connect*. As tabelas
+`USUARIOS` e `SESSOES` aparecem na árvore à esquerda, e dá para rodar qualquer
+consulta — por exemplo:
+
+```sql
+SELECT id, usuario, email, role, criado_em FROM usuarios ORDER BY id;
+```
+
+Funciona com `run-servidor-console.sh` e com os `.bat` do Windows do mesmo jeito.
+
+Dois detalhes que valem saber:
+
+- **Por que o console roda dentro do servidor.** Em modo arquivo embutido o H2
+  tranca o arquivo do banco, e um programa de fora (DBeaver, por exemplo)
+  receberia o erro 90020 enquanto o servidor estivesse no ar. Rodando na mesma
+  JVM, o console usa o banco pelo processo que já o detém e enxerga cada linha no
+  instante em que ela é gravada.
+- **Ele não se atualiza sozinho.** Os dados são os de verdade, ao vivo, mas a
+  tela só muda quando você clica em *Run* outra vez. Depois de cadastrar um
+  usuário no cliente, rode a consulta de novo e a linha nova estará lá.
+
+O console escuta apenas em `localhost` e sobe só com `--console`: sem a opção,
+nada muda e nenhuma porta extra é aberta.
+
 ## Estrutura
 
 ```
