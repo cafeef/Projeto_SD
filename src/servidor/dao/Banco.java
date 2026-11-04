@@ -174,6 +174,69 @@ public final class Banco {
                     """);
 
             st.execute("CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes(usuario_id, ativa)");
+
+            // 'localizacao' e nao 'local': LOCAL e palavra reservada em SQL.
+            // 'estado' e nao 'status', pelo mesmo motivo que o protocolo chamou
+            // o campo de 'room_status' -- nao colidir com o codigo da resposta.
+            // O UNIQUE no nome entrega o 409 "Sala ja cadastrada" de graca.
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS salas (
+                        id          INT AUTO_INCREMENT PRIMARY KEY,
+                        nome        VARCHAR(30) NOT NULL UNIQUE,
+                        capacidade  INT         NOT NULL,
+                        localizacao VARCHAR(60) NOT NULL,
+                        estado      VARCHAR(8)  NOT NULL DEFAULT 'active',
+                        criada_em   TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+
+            // Os recursos da sala ficam em tabela propria, uma linha por
+            // recurso, em vez de concatenados numa coluna so. Concatenar
+            // exigiria escolher um separador, e o protocolo nao define formato
+            // para os itens de 'resources': qualquer separador que escolhessemos
+            // poderia aparecer dentro de um recurso e partir a lista em duas.
+            // A coluna 'ordem' preserva a sequencia em que o cliente enviou.
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS sala_recursos (
+                        sala_id INT          NOT NULL,
+                        ordem   INT          NOT NULL,
+                        recurso VARCHAR(255) NOT NULL,
+                        PRIMARY KEY (sala_id, ordem),
+                        CONSTRAINT fk_recurso_sala FOREIGN KEY (sala_id)
+                            REFERENCES salas(id) ON DELETE CASCADE
+                    )
+                    """);
+
+            // As reservas sao a EP-3, mas a tabela nasce aqui porque a EP-2 ja
+            // depende dela em dois pontos: o campo 'available' do list_rooms e o
+            // 409 "Sala possui reservas ativas" do delete_room. Sem a tabela,
+            // as duas respostas seriam chutes -- com ela, sao consultas de
+            // verdade que simplesmente ainda nao encontram nada.
+            //
+            // O ON DELETE CASCADE na sala e proposital: o delete_room so recusa
+            // a sala com reserva FUTURA, entao uma sala com agenda apenas
+            // passada e removida de fato, e as reservas velhas vao com ela.
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS reservas (
+                        id            INT AUTO_INCREMENT PRIMARY KEY,
+                        sala_id       INT         NOT NULL,
+                        usuario_id    INT         NOT NULL,
+                        dia           DATE        NOT NULL,
+                        inicio        TIME        NOT NULL,
+                        fim           TIME        NOT NULL,
+                        assunto       VARCHAR(60) NOT NULL,
+                        participantes INT         NOT NULL,
+                        ativa         BOOLEAN     NOT NULL DEFAULT TRUE,
+                        criada_em     TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_reserva_sala FOREIGN KEY (sala_id)
+                            REFERENCES salas(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_reserva_usuario FOREIGN KEY (usuario_id)
+                            REFERENCES usuarios(id) ON DELETE CASCADE
+                    )
+                    """);
+
+            st.execute("CREATE INDEX IF NOT EXISTS idx_reservas_sala"
+                    + " ON reservas(sala_id, dia, ativa)");
         }
     }
 

@@ -11,7 +11,7 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 | Entrega | Escopo | Situação |
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
-| EP-2 | Operações de administrador e CRUD de salas | 🔸 admin pronto no servidor; salas pendentes |
+| EP-2 | Operações de administrador e CRUD de salas | 🔸 servidor completo; telas do cliente pendentes |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
@@ -19,13 +19,18 @@ Operações implementadas, com todos os códigos de status previstos no protocol
 - **EP-1** — `register`, `login`, `logout`, `read_user`, `update_user`,
   `delete_user`
 - **EP-2** — `admin_list_users`, `admin_read_user`, `admin_update_user`,
-  `admin_delete_user` (servidor)
+  `admin_delete_user`, `create_room`, `list_rooms`, `read_room`, `update_room`,
+  `delete_room` (servidor)
 
 O poder de administrador sai de uma **whitelist de tokens** (regra 3.14), e não
 do perfil gravado no banco nem de qualquer campo da requisição. Um token entra
 nela no login de uma conta `admin` ou quando um admin promove alguém que já está
 logado, e sai no rebaixamento, no logout e na remoção da conta — sempre na hora,
 sem exigir login novo. Um `role` enviado pelo cliente é ignorado.
+
+Nas salas, **cadastrar, alterar e remover exigem administrador; ler e listar,
+não** (regra 3.7) — quem vai reservar precisa ver a sala. O `room_id` é gerado
+pelo servidor, nunca escolhido pelo cliente, e a sala nasce `active`.
 
 ## Requisitos
 
@@ -129,11 +134,11 @@ O cliente de console aceita `register`, `login`, `read`, `update`, `delete`,
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 236 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 348 verificações em
 seis suítes: validação de campos, tradução das mensagens, banco de dados,
-transporte e erros de protocolo, as seis operações da EP-1, e as telas mais a
-conexão do cliente. No fim, dispara três clientes simultâneos contra o mesmo
-servidor.
+transporte e erros de protocolo, as quinze operações já implementadas, e as
+telas mais a conexão do cliente. No fim, dispara três clientes simultâneos
+contra o mesmo servidor.
 
 Os testes de transporte e de operações montam os bytes na mão, **sem usar as
 classes do projeto** — reproduzem a situação do teste de interoperabilidade, em
@@ -188,6 +193,17 @@ Ele existe porque todo cadastro feito por `register` nasce com perfil `user`, e
 sem um administrador não haveria como exercitar as regras que dependem desse
 perfil. Para começar do zero, basta apagar a pasta `dados/`.
 
+As tabelas são `usuarios`, `sessoes`, `salas`, `sala_recursos` e `reservas`. Os
+recursos de cada sala ficam em tabela própria, uma linha por recurso, em vez de
+concatenados numa coluna: concatenar exigiria escolher um separador, e o
+protocolo não define formato para os itens de `resources` — qualquer separador
+poderia aparecer dentro de um recurso e partir a lista em duas.
+
+A tabela `reservas` é da EP-3, mas nasce já na EP-2 porque duas respostas desta
+entrega dependem dela: o campo `available` do `list_rooms` e o 409 "Sala possui
+reservas ativas" do `delete_room`. Sem a tabela, as duas seriam chutes; com ela,
+são consultas de verdade que ainda não encontram nada.
+
 **Os cadastros sobrevivem ao desligamento do servidor; as sessões, não.** Toda
 vez que o servidor passa a escutar, as sessões anteriores são encerradas — afinal
 todas as conexões caíram junto com ele. Sem isso, quem estava logado antes
@@ -212,11 +228,20 @@ Banco: na tela de login use a URL "jdbc:h2:file:./dados/reservasalas;DB_CLOSE_DE
 
 Abra o endereço no navegador, cole a URL da segunda linha no campo **JDBC URL**,
 deixe `sa` no usuário e a senha em branco, e clique em *Connect*. As tabelas
-`USUARIOS` e `SESSOES` aparecem na árvore à esquerda, e dá para rodar qualquer
-consulta — por exemplo:
+aparecem na árvore à esquerda, e dá para rodar qualquer consulta — por exemplo:
 
 ```sql
 SELECT id, usuario, email, role, criado_em FROM usuarios ORDER BY id;
+```
+
+E uma para as salas, que junta os recursos de cada uma numa coluna só:
+
+```sql
+SELECT s.id, s.nome, s.capacidade, s.localizacao, s.estado,
+       COALESCE(LISTAGG(r.recurso, ', ') WITHIN GROUP (ORDER BY r.ordem), '') AS recursos
+  FROM salas s LEFT JOIN sala_recursos r ON r.sala_id = s.id
+ GROUP BY s.id, s.nome, s.capacidade, s.localizacao, s.estado
+ ORDER BY s.id;
 ```
 
 Funciona com `run-servidor-console.sh` e com os `.bat` do Windows do mesmo jeito.
@@ -242,7 +267,7 @@ src/
 ├── protocolo/     Enquadramento das mensagens, validação de campos e
 │                  montagem das respostas. Compartilhado pelos dois lados.
 ├── servidor/
-│   ├── dao/       Acesso ao H2: usuários e sessões
+│   ├── dao/       Acesso ao H2: usuários, sessões e salas
 │   ├── modelo/    Entidades
 │   └── handlers/  Uma classe por operação do protocolo
 ├── cliente/       Interface gráfica, modo console e conexão

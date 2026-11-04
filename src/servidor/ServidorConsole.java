@@ -5,12 +5,17 @@ import servidor.handlers.AdminDeleteUserHandler;
 import servidor.handlers.AdminListUsersHandler;
 import servidor.handlers.AdminReadUserHandler;
 import servidor.handlers.AdminUpdateUserHandler;
+import servidor.handlers.CreateRoomHandler;
+import servidor.handlers.DeleteRoomHandler;
 import servidor.handlers.DeleteUserHandler;
 import servidor.handlers.EcoHandler;
+import servidor.handlers.ListRoomsHandler;
 import servidor.handlers.LoginHandler;
 import servidor.handlers.LogoutHandler;
+import servidor.handlers.ReadRoomHandler;
 import servidor.handlers.ReadUserHandler;
 import servidor.handlers.RegisterHandler;
+import servidor.handlers.UpdateRoomHandler;
 import servidor.handlers.UpdateUserHandler;
 
 import java.io.BufferedReader;
@@ -124,8 +129,8 @@ public class ServidorConsole {
     /**
      * Monta o dispatcher com as operacoes do protocolo.
      *
-     * As operacoes de administrador, de salas e de reservas entram aqui nas
-     * EP-2 e EP-3; cada uma e so mais um registrar().
+     * As operacoes de reservas entram aqui na EP-3; cada uma e so mais um
+     * registrar().
      */
     public static Dispatcher criarDispatcher() {
         Dispatcher dispatcher = new Dispatcher();
@@ -139,6 +144,11 @@ public class ServidorConsole {
         dispatcher.registrar("admin_read_user", new AdminReadUserHandler());
         dispatcher.registrar("admin_update_user", new AdminUpdateUserHandler());
         dispatcher.registrar("admin_delete_user", new AdminDeleteUserHandler());
+        dispatcher.registrar("create_room", new CreateRoomHandler());
+        dispatcher.registrar("list_rooms", new ListRoomsHandler());
+        dispatcher.registrar("read_room", new ReadRoomHandler());
+        dispatcher.registrar("update_room", new UpdateRoomHandler());
+        dispatcher.registrar("delete_room", new DeleteRoomHandler());
         return dispatcher;
     }
 

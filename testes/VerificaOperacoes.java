@@ -48,6 +48,12 @@ public class VerificaOperacoes {
                         && servidor.ServidorConsole.criarDispatcher().conhece("admin_read_user")
                         && servidor.ServidorConsole.criarDispatcher().conhece("admin_update_user")
                         && servidor.ServidorConsole.criarDispatcher().conhece("admin_delete_user"));
+        confere("dispatcher de producao conhece as 5 operacoes de salas da EP-2",
+                servidor.ServidorConsole.criarDispatcher().conhece("create_room")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("list_rooms")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("read_room")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("update_room")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("delete_room"));
 
         registrar();
         login();
@@ -56,6 +62,7 @@ public class VerificaOperacoes {
         updateUser();
         deleteUser();
         operacoesAdmin();
+        operacoesDeSalas();
 
         // Regra 2.8: 'message' viaja em portugues SEM acento e sem emoji. Se
         // alguem "corrigir" os textos para portugues acentuado, a resposta deixa
@@ -515,6 +522,282 @@ public class VerificaOperacoes {
         }
     }
 
+    static void operacoesDeSalas() throws Exception {
+        System.out.println("\n-- operacoes de salas --");
+        try (Conn adm = new Conn(); Conn c = new Conn()) {
+            String tokenAdmin = campo(json(adm.envia(req("login",
+                    "email", "admin@admin.com", "password", "admin"))), "token");
+            if (tokenAdmin == null) {
+                confere("login do administrador para os testes de sala", false);
+                return;
+            }
+
+            String u = nome(), e = u + "@email.com";
+            c.envia(req("register", "email", e, "user", u, "password", "senha123"));
+            String tokenComum = campo(json(c.envia(req("login", "email", e,
+                    "password", "senha123"))), "token");
+
+            // ---------------------------------------------------- create_room
+            checa("400 token em formato invalido no create_room",
+                    adm.envia(reqSala("create_room", "xyz", "Sala A", "10", "Bloco A",
+                            "\"projetor\"")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("401 token bem formado que nao existe",
+                    adm.envia(reqSala("create_room", TOKEN_FALSO, "Sala A", "10", "Bloco A", "")),
+                    "create_room_response", "401", "Token invalido ou expirado");
+
+            // Regra 3.7: cadastrar sala e operacao de admin.
+            checa("403 usuario comum nao cadastra sala",
+                    c.envia(reqSala("create_room", tokenComum, "Sala Proibida", "10",
+                            "Bloco A", "")),
+                    "create_room_response", "403", "Permissao insuficiente");
+
+            checa("400 capacity zero",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Zero", "0", "Bloco A", "")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            // Regra 2.3: numero onde se espera string tambem e 400.
+            checa("400 capacity como numero e nao string (regra 2.3)",
+                    adm.envia("{\"op\":\"create_room\",\"token\":\"" + tokenAdmin
+                            + "\",\"name\":\"Sala Numerica\",\"capacity\":10,"
+                            + "\"location\":\"Bloco A\",\"resources\":[]}"),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            // Regra 2.4: os itens de 'resources' tambem sao strings.
+            checa("400 item do resources que nao e string (regra 2.4)",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Mista", "10",
+                            "Bloco A", "\"tv\",7")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 resources ausente",
+                    adm.envia(req("create_room", "token", tokenAdmin, "name", "Sala Sem Lista",
+                            "capacity", "10", "location", "Bloco A")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 resources como string e nao array",
+                    adm.envia(req("create_room", "token", tokenAdmin, "name", "Sala Texto",
+                            "capacity", "10", "location", "Bloco A", "resources", "projetor")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            String nomeSala = "Sala " + nome();
+            String r201 = adm.envia(reqSala("create_room", tokenAdmin, nomeSala, "10",
+                    "Bloco T - 1 andar", "\"projetor\",\"tv\""));
+            checa("201 sala cadastrada",
+                    r201, "create_room_response", "201", "Sala cadastrada com sucesso");
+            String roomId = campo(json(r201), "room_id");
+            confere("o 201 devolve room_id numerico",
+                    roomId != null && roomId.matches("^[0-9]{1,10}$"));
+
+            checa("409 nome de sala repetido",
+                    adm.envia(reqSala("create_room", tokenAdmin, nomeSala, "20", "Bloco Z", "")),
+                    "create_room_response", "409", "Sala ja cadastrada");
+
+            // ------------------------------------------------------ read_room
+            checa("400 room_id em formato invalido",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", "abc")),
+                    "read_room_response", "400", "Dados em formato invalido");
+
+            checa("400 room_id ausente",
+                    c.envia(req("read_room", "token", tokenComum)),
+                    "read_room_response", "400", "Dados em formato invalido");
+
+            checa("404 sala inexistente",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", "999999999")),
+                    "read_room_response", "404", "Sala nao encontrada");
+
+            // Leitura liberada a qualquer usuario logado: quem vai reservar
+            // precisa ver a sala. Nao e operacao de admin.
+            String rLeitura = c.envia(req("read_room", "token", tokenComum, "room_id", roomId));
+            checa("200 usuario comum le a sala",
+                    rLeitura, "read_room_response", "200", "Consulta realizada com sucesso");
+            JsonObject sala = json(rLeitura);
+            confere("read_room traz os seis campos da sala",
+                    roomId.equals(campo(sala, "room_id"))
+                            && nomeSala.equals(campo(sala, "name"))
+                            && "10".equals(campo(sala, "capacity"))
+                            && "Bloco T - 1 andar".equals(campo(sala, "location"))
+                            && sala.has("resources")
+                            && "active".equals(campo(sala, "room_status")));
+            confere("a sala nasce active", "active".equals(campo(sala, "room_status")));
+            confere("resources volta como array, na ordem enviada",
+                    sala.get("resources").isJsonArray()
+                            && sala.getAsJsonArray("resources").toString()
+                                    .equals("[\"projetor\",\"tv\"]"));
+            confere("read_room nao devolve 'available' (nao foi perguntado horario)",
+                    !sala.has("available"));
+
+            // ----------------------------------------------------- list_rooms
+            String rLista = c.envia(req("list_rooms", "token", tokenComum));
+            checa("200 listagem sem filtros",
+                    rLista, "list_rooms_response", "200", "Consulta realizada com sucesso");
+            JsonObject lista = json(rLista);
+            confere("a listagem traz count e rooms",
+                    lista.has("count") && lista.has("rooms")
+                            && lista.get("rooms").isJsonArray());
+            confere("count casa com o tamanho de rooms",
+                    campo(lista, "count").equals(
+                            String.valueOf(lista.getAsJsonArray("rooms").size())));
+            confere("a sala cadastrada aparece na listagem",
+                    lista.getAsJsonArray("rooms").toString().contains("\"" + roomId + "\""));
+            // Sem horario nao ha disponibilidade a calcular, e um 'available'
+            // fixo em "true" afirmaria algo que ninguem perguntou.
+            confere("sem o trio de horario, 'available' e omitido em toda sala",
+                    !lista.getAsJsonArray("rooms").toString().contains("available"));
+
+            // O trio date/start_time/end_time anda junto: parte dele e 400.
+            checa("400 list_rooms so com date",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            checa("400 list_rooms so com date e start_time",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01",
+                            "start_time", "14:00")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            checa("400 end_time menor que start_time",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01",
+                            "start_time", "16:00", "end_time", "14:00")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            checa("400 end_time igual ao start_time",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01",
+                            "start_time", "14:00", "end_time", "14:00")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            // A regex aprova a data, o calendario nao.
+            checa("400 data que casa com a regex mas nao existe",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-02-31",
+                            "start_time", "14:00", "end_time", "16:00")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+
+            String rComHorario = c.envia(req("list_rooms", "token", tokenComum,
+                    "date", "2026-12-01", "start_time", "14:00", "end_time", "16:00"));
+            checa("200 listagem com o trio de horario",
+                    rComHorario, "list_rooms_response", "200", "Consulta realizada com sucesso");
+            JsonObject comHorario = json(rComHorario);
+            boolean todasComAvailable = true;
+            for (var item : comHorario.getAsJsonArray("rooms")) {
+                if (!item.getAsJsonObject().has("available")) {
+                    todasComAvailable = false;
+                }
+            }
+            confere("com o trio, toda sala traz 'available'", todasComAvailable);
+            confere("sem reserva nenhuma, a sala active vem disponivel",
+                    rComHorario.contains("\"available\":\"true\""));
+
+            // min_capacity e independente do trio.
+            String rFiltrada = c.envia(req("list_rooms", "token", tokenComum,
+                    "min_capacity", "999"));
+            checa("200 min_capacity sem o trio de horario",
+                    rFiltrada, "list_rooms_response", "200", "Consulta realizada com sucesso");
+            confere("min_capacity acima de todas devolve count 0",
+                    "0".equals(campo(json(rFiltrada), "count")));
+            checa("400 min_capacity zero",
+                    c.envia(req("list_rooms", "token", tokenComum, "min_capacity", "0")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+
+            // ---------------------------------------------------- update_room
+            checa("403 usuario comum nao altera sala",
+                    c.envia(reqAtualizaSala(tokenComum, roomId, "", "20", "", "", "")),
+                    "update_room_response", "403", "Permissao insuficiente");
+
+            checa("404 alterar sala inexistente",
+                    adm.envia(reqAtualizaSala(tokenAdmin, "999999999", "", "20", "", "", "")),
+                    "update_room_response", "404", "Sala nao encontrada");
+
+            // Como no admin_update_user, as chaves sao obrigatorias: "" ja e a
+            // forma de dizer "nao alterar", entao a chave ausente e 400.
+            checa("400 update_room sem a chave room_status",
+                    adm.envia(req("update_room", "token", tokenAdmin, "room_id", roomId,
+                            "name", "", "capacity", "20", "location", "")
+                            .replace("}", ",\"resources\":[]}")),
+                    "update_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 room_status fora do enum",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "", "fechada")),
+                    "update_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("200 alterar so a capacidade",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "20", "", "\"projetor\"", "")),
+                    "update_room_response", "200", "Sala atualizada com sucesso");
+            JsonObject depois = json(c.envia(req("read_room", "token", tokenComum,
+                    "room_id", roomId)));
+            confere("a capacidade mudou", "20".equals(campo(depois, "capacity")));
+            confere("o nome foi preservado pelo \"\"",
+                    nomeSala.equals(campo(depois, "name")));
+            confere("o estado foi preservado pelo \"\"",
+                    "active".equals(campo(depois, "room_status")));
+            // 'resources' e a excecao: vem como lista completa, entao a lista
+            // enviada substitui a anterior inteira.
+            confere("resources foi substituido pela lista enviada",
+                    depois.getAsJsonArray("resources").toString().equals("[\"projetor\"]"));
+
+            checa("200 lista vazia de resources apaga os recursos",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "", "")),
+                    "update_room_response", "200", "Sala atualizada com sucesso");
+            confere("a sala ficou sem recurso nenhum",
+                    json(c.envia(req("read_room", "token", tokenComum, "room_id", roomId)))
+                            .getAsJsonArray("resources").size() == 0);
+
+            // Uma segunda sala, para o 409 de nome e para a listagem.
+            String nomeOutra = "Sala " + nome();
+            String idOutra = campo(json(adm.envia(reqSala("create_room", tokenAdmin, nomeOutra,
+                    "4", "Bloco B", ""))), "room_id");
+            checa("409 renomear para um nome que outra sala ja usa",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, nomeOutra, "", "", "", "")),
+                    "update_room_response", "409", "Sala ja cadastrada");
+
+            // Sala inactive continua existindo e some da disponibilidade.
+            checa("200 deixar a sala inactive",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "", "inactive")),
+                    "update_room_response", "200", "Sala atualizada com sucesso");
+            String rInativa = c.envia(req("list_rooms", "token", tokenComum,
+                    "date", "2026-12-01", "start_time", "14:00", "end_time", "16:00"));
+            boolean inativaIndisponivel = false;
+            for (var item : json(rInativa).getAsJsonArray("rooms")) {
+                JsonObject o = item.getAsJsonObject();
+                if (roomId.equals(campo(o, "room_id"))) {
+                    inativaIndisponivel = "false".equals(campo(o, "available"))
+                            && "inactive".equals(campo(o, "room_status"));
+                }
+            }
+            confere("sala inactive aparece na lista com available \"false\"",
+                    inativaIndisponivel);
+
+            // ---------------------------------------------------- delete_room
+            checa("400 delete_room sem room_id",
+                    adm.envia(req("delete_room", "token", tokenAdmin)),
+                    "delete_room_response", "400", "Dados em formato invalido");
+
+            checa("403 usuario comum nao remove sala",
+                    c.envia(req("delete_room", "token", tokenComum, "room_id", roomId)),
+                    "delete_room_response", "403", "Permissao insuficiente");
+
+            checa("404 remover sala inexistente",
+                    adm.envia(req("delete_room", "token", tokenAdmin, "room_id", "999999999")),
+                    "delete_room_response", "404", "Sala nao encontrada");
+
+            checa("200 sala sem reserva e removida",
+                    adm.envia(req("delete_room", "token", tokenAdmin, "room_id", roomId)),
+                    "delete_room_response", "200", "Sala removida com sucesso");
+
+            checa("404 a sala removida nao e mais encontrada",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", roomId)),
+                    "read_room_response", "404", "Sala nao encontrada");
+
+            checa("404 remover a mesma sala de novo",
+                    adm.envia(req("delete_room", "token", tokenAdmin, "room_id", roomId)),
+                    "delete_room_response", "404", "Sala nao encontrada");
+
+            // O nome volta a ficar livre, como acontece com user e email (3.13).
+            checa("201 o nome da sala removida fica livre",
+                    adm.envia(reqSala("create_room", tokenAdmin, nomeSala, "10", "Bloco T", "")),
+                    "create_room_response", "201", "Sala cadastrada com sucesso");
+
+            // Limpeza, para o banco de teste nao ficar com sobras.
+            adm.envia(req("delete_room", "token", tokenAdmin, "room_id", idOutra));
+            adm.envia(req("logout", "token", tokenAdmin));
+            c.envia(req("delete_user", "token", tokenComum, "password", "senha123"));
+        }
+    }
+
     // ------------------------------------------------------------------ apoio
 
     /** Conexao crua com o servidor, uma mensagem por linha terminada em LF. */
@@ -552,6 +835,29 @@ public class VerificaOperacoes {
             sb.append(",\"").append(pares[i]).append("\":\"").append(pares[i + 1]).append('"');
         }
         return sb.append('}').toString();
+    }
+
+    /**
+     * Monta um create_room. O 'resources' precisa de tratamento proprio porque e
+     * o unico campo do protocolo que e array, e o req() acima so sabe montar
+     * pares de string.
+     *
+     * @param itens o conteudo do array, ja em JSON ("\"tv\",\"projetor\"")
+     */
+    static String reqSala(String op, String token, String nome, String capacidade,
+                          String local, String itens) {
+        return "{\"op\":\"" + op + "\",\"token\":\"" + token
+                + "\",\"name\":\"" + nome + "\",\"capacity\":\"" + capacidade
+                + "\",\"location\":\"" + local + "\",\"resources\":[" + itens + "]}";
+    }
+
+    /** Monta um update_room com as seis chaves que o protocolo exige. */
+    static String reqAtualizaSala(String token, String roomId, String nome, String capacidade,
+                                  String local, String itens, String estado) {
+        return "{\"op\":\"update_room\",\"token\":\"" + token
+                + "\",\"room_id\":\"" + roomId + "\",\"name\":\"" + nome
+                + "\",\"capacity\":\"" + capacidade + "\",\"location\":\"" + local
+                + "\",\"resources\":[" + itens + "],\"room_status\":\"" + estado + "\"}";
     }
 
     /** Nome de usuario aleatorio: so letras minusculas, como manda a regex. */

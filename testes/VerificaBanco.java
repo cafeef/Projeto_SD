@@ -1,11 +1,20 @@
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
 import servidor.AutorizacaoAdmin;
 import servidor.Senhas;
 import servidor.dao.Banco;
 import servidor.dao.DadoDuplicadoException;
+import servidor.dao.SalaDAO;
 import servidor.dao.SessaoDAO;
 import servidor.dao.UsuarioDAO;
+import servidor.modelo.Sala;
 import servidor.modelo.Usuario;
 
 /**
@@ -187,6 +196,123 @@ public class VerificaBanco {
         confere("sem sessao ativa nao ha token para promover",
                 SessaoDAO.tokenAtivoDoUsuario(idJoao) == null);
 
+        // ================= Salas (EP-2) =================
+
+        confere("banco novo comeca sem sala", SalaDAO.contar() == 0);
+
+        int idB12 = SalaDAO.criar("Sala de Estudo B12", 12, "Bloco B - 1 andar",
+                Arrays.asList("projetor", "tv"));
+        confere("cadastro de sala devolve id", idB12 > 0);
+
+        Sala b12 = SalaDAO.buscarPorId(idB12);
+        confere("sala gravada volta com os dados certos",
+                b12 != null && "Sala de Estudo B12".equals(b12.getNome())
+                        && b12.getCapacidade() == 12
+                        && "Bloco B - 1 andar".equals(b12.getLocalizacao()));
+        confere("sala nasce active", b12 != null && b12.estaAtiva());
+        // A ordem dos recursos e a que o cliente enviou, e nao a alfabetica:
+        // e por isso que sala_recursos tem a coluna 'ordem'.
+        confere("recursos voltam na ordem enviada",
+                b12 != null && b12.getRecursos().equals(Arrays.asList("projetor", "tv")));
+        confere("sala inexistente devolve null", SalaDAO.buscarPorId(999999) == null);
+
+        // O UNIQUE no nome e o que entrega o 409 "Sala ja cadastrada".
+        salaDuplicada("sala com nome repetido e recusada", "Sala de Estudo B12", 8, "Bloco C");
+
+        int idVazia = SalaDAO.criar("Sala Sem Recurso", 4, "Bloco A", List.of());
+        Sala vazia = SalaDAO.buscarPorId(idVazia);
+        confere("sala sem recurso volta com lista vazia, nao nula",
+                vazia != null && vazia.getRecursos().isEmpty());
+
+        // --- listagem e filtro de capacidade ---
+        confere("listagem traz as duas salas", SalaDAO.listar(null).size() == 2);
+        confere("listagem vem ordenada por id",
+                SalaDAO.listar(null).get(0).getId() == idB12);
+        List<Sala> grandes = SalaDAO.listar(10);
+        confere("min_capacity filtra as menores",
+                grandes.size() == 1 && grandes.get(0).getId() == idB12);
+        confere("min_capacity acima de todas devolve lista vazia",
+                SalaDAO.listar(1000).isEmpty());
+        confere("listagem carrega os recursos de cada sala",
+                SalaDAO.listar(null).get(0).getRecursos().size() == 2);
+
+        // --- atualizacao: null mantem, valor troca ---
+        SalaDAO.atualizar(idB12, null, 16, null, null, null);
+        Sala depoisDaCapacidade = SalaDAO.buscarPorId(idB12);
+        confere("capacidade trocada", depoisDaCapacidade.getCapacidade() == 16);
+        confere("nome preservado quando vem null",
+                "Sala de Estudo B12".equals(depoisDaCapacidade.getNome()));
+        confere("recursos preservados quando a lista vem null",
+                depoisDaCapacidade.getRecursos().size() == 2);
+
+        // A lista de recursos chega COMPLETA: a vazia significa "nenhum
+        // recurso", e nao "nao alterar" -- so o null preserva.
+        SalaDAO.atualizar(idB12, null, null, null, List.of(), null);
+        confere("lista vazia apaga os recursos",
+                SalaDAO.buscarPorId(idB12).getRecursos().isEmpty());
+
+        SalaDAO.atualizar(idB12, null, null, null, Arrays.asList("quadro", "tv", "projetor"), null);
+        confere("lista nova substitui a antiga inteira",
+                SalaDAO.buscarPorId(idB12).getRecursos()
+                        .equals(Arrays.asList("quadro", "tv", "projetor")));
+
+        SalaDAO.atualizar(idB12, null, null, null, null, "inactive");
+        confere("estado inactive e gravado", !SalaDAO.buscarPorId(idB12).estaAtiva());
+        SalaDAO.atualizar(idB12, null, null, null, null, "active");
+
+        salaRenomeadaDuplicada("renomear para um nome ja usado e recusado", idB12, "Sala Sem Recurso");
+        confere("a recusa nao deixou o nome pela metade",
+                "Sala de Estudo B12".equals(SalaDAO.buscarPorId(idB12).getNome()));
+        confere("atualizar sala inexistente devolve false",
+                !SalaDAO.atualizar(999999, "Outro Nome", null, null, null, null));
+
+        confere("existeNome encontra a sala", SalaDAO.existeNome("Sala de Estudo B12"));
+        confere("existeNome nao inventa sala", !SalaDAO.existeNome("Sala Que Nao Existe"));
+
+        // --- reservas: sustentam o 'available' e o 409 do delete_room ---
+        confere("sala nova nao tem reserva futura", !SalaDAO.temReservaFutura(idB12));
+        Set<Integer> livres = SalaDAO.ocupadasNoPeriodo(
+                LocalDate.now().plusDays(1), LocalTime.of(14, 0), LocalTime.of(16, 0));
+        confere("sem reserva nenhuma sala aparece ocupada", livres.isEmpty());
+
+        LocalDate amanha = LocalDate.now().plusDays(1);
+        inserirReserva(idB12, idJoao, amanha, "14:00", "16:00");
+        confere("reserva futura bloqueia a remocao da sala",
+                SalaDAO.temReservaFutura(idB12));
+        confere("a outra sala continua livre para remover",
+                !SalaDAO.temReservaFutura(idVazia));
+
+        // Colisao: os limites sao estritos, entao encostar nao e colidir.
+        confere("periodo identico colide",
+                SalaDAO.ocupadasNoPeriodo(amanha, LocalTime.of(14, 0), LocalTime.of(16, 0))
+                        .contains(idB12));
+        confere("periodo sobreposto em parte colide",
+                SalaDAO.ocupadasNoPeriodo(amanha, LocalTime.of(15, 0), LocalTime.of(17, 0))
+                        .contains(idB12));
+        confere("periodo que engloba a reserva colide",
+                SalaDAO.ocupadasNoPeriodo(amanha, LocalTime.of(13, 0), LocalTime.of(18, 0))
+                        .contains(idB12));
+        confere("periodo que termina quando a reserva comeca NAO colide",
+                !SalaDAO.ocupadasNoPeriodo(amanha, LocalTime.of(12, 0), LocalTime.of(14, 0))
+                        .contains(idB12));
+        confere("periodo que comeca quando a reserva termina NAO colide",
+                !SalaDAO.ocupadasNoPeriodo(amanha, LocalTime.of(16, 0), LocalTime.of(18, 0))
+                        .contains(idB12));
+        confere("outro dia nao colide",
+                SalaDAO.ocupadasNoPeriodo(amanha.plusDays(1), LocalTime.of(14, 0),
+                        LocalTime.of(16, 0)).isEmpty());
+
+        // --- remocao de sala ---
+        confere("remocao de sala funciona", SalaDAO.remover(idVazia));
+        confere("sala removida some", SalaDAO.buscarPorId(idVazia) == null);
+        confere("o nome volta a ficar livre", !SalaDAO.existeNome("Sala Sem Recurso"));
+        confere("remover sala inexistente devolve false", !SalaDAO.remover(999999));
+
+        // A sala com agenda e removivel no banco; quem recusa e o handler, com
+        // o 409. Aqui confirmamos que a reserva vai junto, sem deixar orfa.
+        confere("remover a sala leva a reserva com ela (ON DELETE CASCADE)",
+                SalaDAO.remover(idB12) && contarReservas() == 0);
+
         // --- remocao (delete_user) ---
         String token3 = SessaoDAO.criar(idJoao);
         confere("remocao do cadastro funciona", UsuarioDAO.remover(idJoao));
@@ -202,6 +328,59 @@ public class VerificaBanco {
         Banco.encerrar();
         System.out.println("\n===== banco: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
+    }
+
+    static void salaDuplicada(String nome, String sala, int capacidade, String local)
+            throws Exception {
+        try {
+            SalaDAO.criar(sala, capacidade, local, List.of());
+            confere(nome, false);
+        } catch (DadoDuplicadoException e) {
+            confere(nome, true);
+        }
+    }
+
+    static void salaRenomeadaDuplicada(String nome, int id, String novoNome) throws Exception {
+        try {
+            SalaDAO.atualizar(id, novoNome, null, null, null, null);
+            confere(nome, false);
+        } catch (DadoDuplicadoException e) {
+            confere(nome, true);
+        }
+    }
+
+    /**
+     * Grava uma reserva direto no banco.
+     *
+     * A EP-3 vai ter um ReservaDAO; enquanto ele nao existe, o INSERT na mao e o
+     * que permite exercitar de verdade as consultas que a EP-2 ja depende dele
+     * -- o 'available' do list_rooms e o 409 do delete_room. A alternativa seria
+     * testar as duas com a tabela sempre vazia, que nao prova nada.
+     */
+    static void inserirReserva(int salaId, int usuarioId, LocalDate dia, String inicio, String fim)
+            throws Exception {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "INSERT INTO reservas (sala_id, usuario_id, dia, inicio, fim,"
+                             + " assunto, participantes) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setInt(1, salaId);
+            ps.setInt(2, usuarioId);
+            ps.setDate(3, java.sql.Date.valueOf(dia));
+            ps.setTime(4, java.sql.Time.valueOf(inicio + ":00"));
+            ps.setTime(5, java.sql.Time.valueOf(fim + ":00"));
+            ps.setString(6, "Reuniao de teste");
+            ps.setInt(7, 4);
+            ps.executeUpdate();
+        }
+    }
+
+    static int contarReservas() throws Exception {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM reservas");
+             var rs = ps.executeQuery()) {
+            rs.next();
+            return rs.getInt(1);
+        }
     }
 
     static void duplicado(String nome, String usuario, String email, String senha) throws Exception {

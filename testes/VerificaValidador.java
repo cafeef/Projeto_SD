@@ -59,6 +59,13 @@ public class VerificaValidador {
         invalido("available", "True");
         valido("room_status", "inactive");
         valido("created_at", "2026-09-09 14:32:10");
+        valido("name", "Sala de Estudo B12");
+        invalido("name", "Sala de Reuniao, Bloco B");   // virgula nao entra em 'name'
+        invalido("name", "a".repeat(31));
+        valido("location", "Bloco B - 1 andar, sala 3.");
+        invalido("location", "a".repeat(61));
+        valido("min_capacity", "6");
+        invalido("min_capacity", "0");
 
         // --- regras 2.3 e 2.10 sobre o JSON ---
         motivo("numero onde se espera string (2.3)", "{\"capacity\":12}", "capacity", Motivo.TIPO_INVALIDO);
@@ -89,6 +96,20 @@ public class VerificaValidador {
             falha("update_user sem email nao deveria falhar");
         }
 
+        // --- 'resources': o unico campo do protocolo que e array (regra 2.4) ---
+        lista("array de strings passa", "{\"resources\":[\"projetor\",\"tv\"]}", "projetor,tv");
+        lista("array vazio e valido (sala sem recurso)", "{\"resources\":[]}", "");
+        lista("a ordem enviada e preservada", "{\"resources\":[\"tv\",\"projetor\"]}", "tv,projetor");
+        // Sem regex nos itens de proposito: o protocolo nao define formato para
+        // eles, e recusar um recurso que ele aceita quebra a interoperabilidade.
+        lista("recurso com acento e espaco passa", "{\"resources\":[\"ar condicionado\"]}",
+                "ar condicionado");
+        motivoLista("chave ausente", "{}", Motivo.AUSENTE);
+        motivoLista("null explicito", "{\"resources\":null}", Motivo.NULO);
+        motivoLista("string onde se espera array", "{\"resources\":\"projetor\"}", Motivo.TIPO_INVALIDO);
+        motivoLista("numero dentro do array (2.4)", "{\"resources\":[\"tv\",2]}", Motivo.TIPO_INVALIDO);
+        motivoLista("objeto dentro do array", "{\"resources\":[{\"a\":\"b\"}]}", Motivo.TIPO_INVALIDO);
+
         // --- erro de digitacao no nosso codigo falha alto, nao passa batido ---
         try {
             Validador.formatoValido("usuario", "joao");
@@ -111,6 +132,25 @@ public class VerificaValidador {
 
     static void invalido(String campo, String valor) {
         confere("invalido " + campo + " = \"" + valor + "\"", !Validador.formatoValido(campo, valor));
+    }
+
+    /** Confere listaDeTextos comparando os itens unidos por virgula. */
+    static void lista(String nome, String req, String esperado) {
+        try {
+            String obtido = String.join(",", Validador.listaDeTextos(json(req), "resources"));
+            confere(nome + " -> [" + obtido + "]", esperado.equals(obtido));
+        } catch (CampoInvalidoException e) {
+            falha(nome + " lancou " + e.getMotivo());
+        }
+    }
+
+    static void motivoLista(String nome, String req, Motivo esperado) {
+        try {
+            Validador.listaDeTextos(json(req), "resources");
+            falha("resources: " + nome + " (nao lancou)");
+        } catch (CampoInvalidoException e) {
+            confere("resources: " + nome + " -> " + e.getMotivo(), e.getMotivo() == esperado);
+        }
     }
 
     static void motivo(String nome, String req, String campo, Motivo esperado) {

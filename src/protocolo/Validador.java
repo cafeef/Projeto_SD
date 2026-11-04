@@ -4,8 +4,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -65,8 +67,8 @@ public final class Validador {
         m.put("created_at",     Pattern.compile(
                 "^[0-9]{4}-[0-9]{2}-[0-9]{2} ([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$"));
         REGEX = Collections.unmodifiableMap(m);
-        // Sem regex de propósito: 'message' e texto livre e 'resources' e um
-        // array de strings, validado a parte quando a EP-2 chegar.
+        // Sem regex de proposito: 'message' e texto livre e 'resources' e um
+        // array de strings, validado por listaDeTextos() mais abaixo.
     }
 
     private Validador() {
@@ -141,6 +143,45 @@ public final class Validador {
             throws CampoInvalidoException {
         String valor = opcionalAtualizacao(requisicao, campo);
         return (valor == null || valor.isEmpty()) ? null : valor;
+    }
+
+    /**
+     * Le um campo que e um ARRAY de strings -- hoje so o 'resources' das salas.
+     *
+     * O protocolo exige a chave presente e nao define formato para os itens:
+     * sao strings livres, e o array vazio e valido (sala sem recurso nenhum).
+     * Por isso aqui nao ha regex: recusar um recurso que o protocolo aceita
+     * quebraria a interoperabilidade exatamente como aceitar um que ele recusa.
+     *
+     * O tamanho nao precisa de limite proprio -- o enquadramento ja corta
+     * qualquer mensagem acima de 8192 bytes antes de ela chegar aqui.
+     *
+     * @return a lista na ordem enviada; vazia se o array veio vazio
+     * @throws CampoInvalidoException se a chave falta, veio null, nao e array
+     *         ou tem algum item que nao e string
+     */
+    public static List<String> listaDeTextos(JsonObject requisicao, String campo)
+            throws CampoInvalidoException {
+        if (requisicao == null || !requisicao.has(campo)) {
+            throw new CampoInvalidoException(campo, CampoInvalidoException.Motivo.AUSENTE);
+        }
+        JsonElement elemento = requisicao.get(campo);
+        if (elemento.isJsonNull()) {
+            throw new CampoInvalidoException(campo, CampoInvalidoException.Motivo.NULO);
+        }
+        if (!elemento.isJsonArray()) {
+            throw new CampoInvalidoException(campo, CampoInvalidoException.Motivo.TIPO_INVALIDO);
+        }
+        List<String> itens = new ArrayList<>();
+        for (JsonElement item : elemento.getAsJsonArray()) {
+            if (!item.isJsonPrimitive() || !item.getAsJsonPrimitive().isString()) {
+                // Regra 2.4: os valores dentro da lista tambem sao strings.
+                throw new CampoInvalidoException(campo,
+                        CampoInvalidoException.Motivo.TIPO_INVALIDO);
+            }
+            itens.add(item.getAsString());
+        }
+        return itens;
     }
 
     /**
