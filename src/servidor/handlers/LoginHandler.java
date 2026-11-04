@@ -17,9 +17,10 @@ import servidor.modelo.Usuario;
  *
  *  - email inexistente e senha errada respondem a MESMA mensagem 401, para nao
  *    revelar quais emails estao cadastrados;
- *  - a checagem de sessao ativa (409) vem DEPOIS da checagem de credenciais,
- *    senao quem errasse a senha descobriria, pelo 409, que aquele email existe
- *    e esta logado -- exatamente o que a regra anterior quer evitar.
+ *  - a checagem de sessao ativa (409) vem DEPOIS da checagem de credenciais
+ *    (regra 3.12), senao quem errasse a senha descobriria, pelo 409, que aquele
+ *    email existe e esta logado -- exatamente o que a regra anterior quer
+ *    evitar.
  */
 public class LoginHandler implements Handler {
 
@@ -39,12 +40,13 @@ public class LoginHandler implements Handler {
             return Resposta.de("login", "401", "Email ou senha incorretos");
         }
 
-        // Regra 3.5: uma sessao ativa por usuario. Sessao vencida nao bloqueia.
-        if (SessaoDAO.temSessaoAtiva(usuario.getId())) {
+        // Regras 3.5 e 3.11: uma sessao ativa por usuario, e a checagem e a
+        // criacao do token na mesma secao critica -- senao dois logins
+        // simultaneos da mesma conta criariam duas sessoes.
+        String token = SessaoDAO.criarSeSemSessaoAtiva(usuario.getId());
+        if (token == null) {
             return Resposta.de("login", "409", "Usuario ja possui sessao ativa");
         }
-
-        String token = SessaoDAO.criar(usuario.getId());   // regra 3.1
 
         JsonObject resposta = Resposta.de("login", "200", "Login realizado com sucesso");
         resposta.addProperty("token", token);

@@ -148,12 +148,12 @@ public final class Banco {
                 "INSERT INTO usuarios (usuario, email, senha_hash, salt, role)"
                         + " VALUES (?, ?, ?, ?, 'admin')")) {
             ps.setString(1, "admin");
-            ps.setString(2, "admin@email.com");
+            ps.setString(2, "admin@admin.com");
             ps.setString(3, Senhas.hash("admin", salt));
             ps.setString(4, salt);
             ps.executeUpdate();
         }
         System.out.println("Banco: administrador inicial criado"
-                + " (user \"admin\", email \"admin@email.com\", senha \"admin\").");
+                + " (user \"admin\", email \"admin@admin.com\", senha \"admin\").");
     }
 }

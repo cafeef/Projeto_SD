@@ -253,12 +253,23 @@ public class VerificaOperacoes {
                     c.envia("{\"op\":\"update_user\",\"token\":\"" + token + "\",\"user\":null}"),
                     "update_user_response", "400", "Dados em formato invalido");
 
-            checa("200 campo vazio e ignorado (regra 2.11)",
+            checa("400 user e password vazios ao mesmo tempo (regra 2.13)",
                     c.envia(req("update_user", "token", token, "user", "", "password", "")),
+                    "update_user_response", "400", "Nenhum dado para atualizar");
+
+            checa("400 sem nenhum campo de alteracao (nada mudaria)",
+                    c.envia(req("update_user", "token", token)),
+                    "update_user_response", "400", "Nenhum dado para atualizar");
+
+            // O "" continua querendo dizer "nao alterar" (regra 2.11): junto de um
+            // campo que muda de verdade, a requisicao passa e o vazio e ignorado.
+            checa("200 user vazio e ignorado quando a senha vem junto (regra 2.11)",
+                    c.envia(req("update_user", "token", token, "user", "",
+                            "password", "senha123")),
                     "update_user_response", "200", "Dados atualizados com sucesso");
 
             JsonObject apos = json(c.envia(req("read_user", "token", token)));
-            confere("campo vazio realmente nao alterou nada", u.equals(campo(apos, "user")));
+            confere("campo vazio realmente nao alterou o user", u.equals(campo(apos, "user")));
 
             String novo = nome();
             checa("200 troca de user", c.envia(req("update_user", "token", token, "user", novo)),
@@ -302,9 +313,15 @@ public class VerificaOperacoes {
                     "password", "senha 123")), "delete_user_response", "400",
                     "Senha em formato invalido");
 
-            checa("401 senha incorreta", c.envia(req("delete_user", "token", token,
-                    "password", "outrasenha")), "delete_user_response", "401",
-                    "Token invalido ou expirado");
+            checa("403 senha incorreta (regra 3.9)", c.envia(req("delete_user", "token", token,
+                    "password", "outrasenha")), "delete_user_response", "403",
+                    "Senha incorreta");
+
+            // E o motivo de ser 403 e nao 401: a sessao nao pode cair por uma senha
+            // errada, senao o cliente se desloga e o login seguinte bate em 409.
+            checa("a sessao sobrevive a senha errada",
+                    c.envia(req("read_user", "token", token)), "read_user_response", "200",
+                    "Consulta realizada com sucesso");
 
             checa("200 usuario removido", c.envia(req("delete_user", "token", token,
                     "password", "senha123")), "delete_user_response", "200",
@@ -319,7 +336,7 @@ public class VerificaOperacoes {
                     "login_response", "401", "Email ou senha incorretos");
 
             // Regra do ultimo administrador, com o admin semeado no boot.
-            String tokenAdmin = campo(json(c.envia(req("login", "email", "admin@email.com",
+            String tokenAdmin = campo(json(c.envia(req("login", "email", "admin@admin.com",
                     "password", "admin"))), "token");
             if (tokenAdmin == null) {
                 confere("login do administrador semeado", false);

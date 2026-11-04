@@ -10,7 +10,7 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 
 | Entrega | Escopo | Situação |
 |---|---|---|
-| **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa |
+| **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
 | EP-2 | Operações de administrador e CRUD de salas | pendente |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
 
@@ -120,7 +120,7 @@ O cliente de console aceita `register`, `login`, `read`, `update`, `delete`,
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 187 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 201 verificações em
 seis suítes: validação de campos, tradução das mensagens, banco de dados,
 transporte e erros de protocolo, as seis operações da EP-1, e as telas mais a
 conexão do cliente. No fim, dispara três clientes simultâneos contra o mesmo
@@ -129,6 +129,20 @@ servidor.
 Os testes de transporte e de operações montam os bytes na mão, **sem usar as
 classes do projeto** — reproduzem a situação do teste de interoperabilidade, em
 que o outro lado não compartilha código nenhum com o nosso.
+
+### Testador oficial do protocolo
+
+```bash
+./conformidade.sh
+```
+
+Sobe o servidor e roda contra ele o testador que a turma mantém junto do
+protocolo, que confere cada resposta contra a especificação. É o mesmo programa
+usado no teste de interoperabilidade.
+
+Depende do Node e do repositório do protocolo clonado ao lado deste; sem um dos
+dois, o script avisa e sai. Por isso ele é separado do `testar.sh`, que roda só
+com o JDK e as bibliotecas de `lib/`.
 
 ## Levando o projeto para outra máquina
 
@@ -158,7 +172,7 @@ Na criação, um administrador inicial é cadastrado:
 
 | Campo | Valor |
 |---|---|
-| e-mail | `admin@email.com` |
+| e-mail | `admin@admin.com` |
 | senha | `admin` |
 
 Ele existe porque todo cadastro feito por `register` nasce com perfil `user`, e
@@ -191,9 +205,18 @@ lib/               Bibliotecas, versionadas para o projeto rodar sem baixar nada
 
 ## Protocolo
 
-A especificação é mantida pela turma em uma planilha compartilhada. O arquivo
-`Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da versão
-contra a qual este código foi escrito — **versão 2.0**.
+A especificação é mantida pela turma e hoje vive em um documento AsyncAPI
+(`asyncapi.yaml`) no repositório `protocolo-reserva-salas`. Este código está em
+conformidade com a **versão 2.6**.
+
+O arquivo `Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da
+planilha original (versão 2.0), em que a EP-1 foi escrita, e fica como
+histórico. As diferenças da 2.0 para a 2.6 que afetam a EP-1 são cinco: e-mail
+aceita domínio de vários níveis; `delete_user` com senha errada responde 403
+"Senha incorreta" sem derrubar a sessão; alterar usuário sem mudar nada responde
+400 "Nenhum dado para atualizar"; o login checa e cria a sessão na mesma seção
+crítica; e o administrador inicial usa o e-mail `admin@admin.com`, igual em
+todos os grupos.
 
 Resumo do transporte:
 

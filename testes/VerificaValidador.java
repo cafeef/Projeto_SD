@@ -41,6 +41,10 @@ public class VerificaValidador {
         // --- email ---
         valido("email", "joao.silva@email.com");
         valido("email", "a@b.co");
+        // Dominio multinivel passou a valer na v2.6 do protocolo -- e o formato
+        // dos emails da propria universidade.
+        valido("email", "fernanda@alunos.utfpr.edu.br");
+        valido("email", "nome-com-traco@sub-dominio.exemplo.com");
         invalido("email", "JOAO@email.com");
         invalido("email", "joao@email");
         invalido("email", "joao silva@email.com");

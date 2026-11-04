@@ -39,7 +39,7 @@ public final class Validador {
         // --- Usuario ---
         m.put("user",           Pattern.compile("^[a-z]{1,30}$"));
         m.put("password",       Pattern.compile("^[A-Za-z0-9]{1,20}$"));
-        m.put("email",          Pattern.compile("^[a-z0-9.]+@[a-z0-9]+(\\.[a-z]+){1,2}$"));
+        m.put("email",          Pattern.compile("^[a-z0-9._-]+@[a-z0-9-]+(\\.[a-z0-9-]+)*\\.[a-z]{2,}$"));
         m.put("role",           Pattern.compile("^(user|admin)$"));
         m.put("target_user",    Pattern.compile("^[a-z]{1,30}$"));
         // --- Salas ---

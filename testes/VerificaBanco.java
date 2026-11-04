@@ -1,3 +1,5 @@
+import java.util.concurrent.CountDownLatch;
+
 import servidor.Senhas;
 import servidor.dao.Banco;
 import servidor.dao.DadoDuplicadoException;
@@ -20,6 +22,10 @@ public class VerificaBanco {
         Usuario admin = UsuarioDAO.buscarPorUsuario("admin");
         confere("administrador inicial foi criado", admin != null);
         confere("administrador tem role admin", admin != null && admin.isAdmin());
+        // Email combinado entre todos os grupos (regra 3.15): e com esta conta que
+        // os outros servidores -- e o testador oficial -- entram no nosso.
+        confere("administrador inicial usa o email combinado admin@admin.com",
+                admin != null && "admin@admin.com".equals(admin.getEmail()));
         confere("existe exatamente 1 administrador", UsuarioDAO.contarAdministradores() == 1);
         confere("created_at sai no formato do protocolo",
                 admin != null && admin.getCriadoEmFormatado()
@@ -127,6 +133,36 @@ public class VerificaBanco {
         confere("usuario pode entrar de novo depois do reinicio, sem 409",
                 !SessaoDAO.temSessaoAtiva(idJoao) && !SessaoDAO.temSessaoAtiva(idMaria));
         confere("encerrar de novo nao encontra nada", SessaoDAO.invalidarTodas() == 0);
+
+        // --- regra 3.11: dois logins simultaneos nao criam duas sessoes ---
+        // Enquanto checar e criar eram duas chamadas separadas, as duas threads
+        // passavam pelo temSessaoAtiva antes de qualquer uma gravar o token, e as
+        // duas sessoes nasciam. Agora uma leva o token e a outra leva null (409).
+        final String[] obtidos = new String[2];
+        CountDownLatch largada = new CountDownLatch(1);
+        Thread[] corredores = new Thread[2];
+        for (int i = 0; i < corredores.length; i++) {
+            final int pos = i;
+            corredores[i] = new Thread(() -> {
+                try {
+                    largada.await();
+                    obtidos[pos] = SessaoDAO.criarSeSemSessaoAtiva(idJoao);
+                } catch (Exception e) {
+                    obtidos[pos] = null;
+                }
+            });
+            corredores[i].start();
+        }
+        largada.countDown();
+        for (Thread corredor : corredores) {
+            corredor.join();
+        }
+        confere("dois logins simultaneos: exatamente um recebe token (regra 3.11)",
+                (obtidos[0] == null) != (obtidos[1] == null));
+        SessaoDAO.invalidarTodasDoUsuario(idJoao);
+        confere("depois do logout da sessao vencedora o login volta a passar",
+                SessaoDAO.criarSeSemSessaoAtiva(idJoao) != null);
+        SessaoDAO.invalidarTodasDoUsuario(idJoao);
 
         // --- remocao (delete_user) ---
         String token3 = SessaoDAO.criar(idJoao);

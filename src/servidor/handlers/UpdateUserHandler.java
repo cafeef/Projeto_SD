@@ -14,6 +14,8 @@ import servidor.modelo.Usuario;
  * Regras especificas:
  *
  *  - campo vazio ("") significa "nao alterar"; campo nulo responde 400 (regra 2.11)
+ *  - 'user' e 'password' vazios ao mesmo tempo respondem 400 "Nenhum dado para
+ *    atualizar" (regra 2.13): alterar exige mudar pelo menos um campo
  *  - o email NAO pode ser alterado: se a chave 'email' vier, responde 400 (RNF 5.c)
  *  - ao trocar o proprio 'user', o token continua valido -- e por isso que o
  *    token identifica a sessao por id interno, e nao pelo nome do usuario
@@ -46,6 +48,12 @@ public class UpdateUserHandler extends HandlerAutenticado {
         }
         if (novaSenha != null && novaSenha.isEmpty()) {
             novaSenha = null;
+        }
+
+        // Regra 2.13: sem nada a alterar o 200 seria mentira -- nada mudaria.
+        // Mensagem propria, diferente do 400 de formato que erro400() devolve.
+        if (novoUsuario == null && novaSenha == null) {
+            return resposta("400", "Nenhum dado para atualizar");
         }
 
         try {

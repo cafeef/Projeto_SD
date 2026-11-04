@@ -16,14 +16,13 @@ import servidor.modelo.Usuario;
  *   1. token fora de formato ........ 400
  *   2. token invalido ou expirado ... 401   (as duas na classe base)
  *   3. senha fora de formato ........ 400
- *   4. senha incorreta .............. 401
+ *   4. senha incorreta .............. 403
  *   5. ultimo administrador ......... 403
  *
- * O passo 4 merece atencao: a planilha diz "Senha incorreta responde 401" e
- * define uma unica mensagem de 401 para esta operacao, "Token invalido ou
- * expirado". Entao e essa a mensagem que sai, ainda que o token esteja bom e o
- * problema seja a senha. Foi assim que ficou combinado, e mudar por conta
- * propria quebraria a interoperabilidade com os outros grupos.
+ * O passo 4 mudou na versao 2.1 do protocolo (regra 3.9). Antes respondia 401, e
+ * o 401 fazia o cliente descartar um token que o servidor continuava tratando
+ * como ativo: o login seguinte batia em 409 e a conta ficava inacessivel por ate
+ * 30 minutos. Agora responde 403 "Senha incorreta" e a sessao segue de pe.
  */
 public class DeleteUserHandler extends HandlerAutenticado {
 
@@ -41,8 +40,9 @@ public class DeleteUserHandler extends HandlerAutenticado {
             return erro400();
         }
 
+        // Regra 3.9: a senha errada nao derruba a sessao, so nega a remocao.
         if (!UsuarioDAO.conferirSenha(autor.getId(), senha)) {
-            return resposta("401", "Token invalido ou expirado");
+            return resposta("403", "Senha incorreta");
         }
 
         // Sem esta regra, o sistema poderia ficar sem nenhum administrador e as

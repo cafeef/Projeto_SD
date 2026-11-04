@@ -48,6 +48,25 @@ public final class SessaoDAO {
     }
 
     /**
+     * Checa a sessao ativa e emite o token na MESMA secao critica (regra 3.11).
+     * Devolve o token novo, ou null se o usuario ja tinha sessao ativa.
+     *
+     * Em dois passos separados, dois logins simultaneos da mesma conta passavam
+     * os dois pelo temSessaoAtiva antes de qualquer um gravar, e nasciam duas
+     * sessoes. O protocolo manda que um receba 200 e o outro 409.
+     *
+     * O synchronized basta aqui: o banco e embutido e so este processo o abre.
+     * Um lock por usuario seria mais fino, mas login e operacao rara e serializar
+     * todos eles nao custa nada perceptivel.
+     */
+    public static synchronized String criarSeSemSessaoAtiva(int usuarioId) throws SQLException {
+        if (temSessaoAtiva(usuarioId)) {
+            return null;
+        }
+        return criar(usuarioId);
+    }
+
+    /**
      * Valida o token e devolve o dono da sessao, ou null se o token nao existe,
      * ja foi invalidado ou expirou.
      *
