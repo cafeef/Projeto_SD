@@ -43,6 +43,11 @@ public class VerificaOperacoes {
                         && servidor.ServidorConsole.criarDispatcher().conhece("read_user")
                         && servidor.ServidorConsole.criarDispatcher().conhece("update_user")
                         && servidor.ServidorConsole.criarDispatcher().conhece("delete_user"));
+        confere("dispatcher de producao conhece as 4 operacoes de admin da EP-2",
+                servidor.ServidorConsole.criarDispatcher().conhece("admin_list_users")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("admin_read_user")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("admin_update_user")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("admin_delete_user"));
 
         registrar();
         login();
@@ -50,6 +55,7 @@ public class VerificaOperacoes {
         readUser();
         updateUser();
         deleteUser();
+        operacoesAdmin();
 
         // Regra 2.8: 'message' viaja em portugues SEM acento e sem emoji. Se
         // alguem "corrigir" os textos para portugues acentuado, a resposta deixa
@@ -347,6 +353,165 @@ public class VerificaOperacoes {
                         "Nao e possivel remover o ultimo administrador");
                 c.envia(req("logout", "token", tokenAdmin));
             }
+        }
+    }
+
+    /**
+     * As quatro operacoes admin_* e a whitelist de tokens (regra 3.14).
+     *
+     * O fio condutor e sempre o mesmo: quem decide se a requisicao tem poder de
+     * admin e a whitelist, nunca o cliente e nunca o role gravado no banco. Por
+     * isso os testes de promocao e rebaixamento usam o token que o alvo JA tem
+     * na mao, sem login novo.
+     */
+    static void operacoesAdmin() throws Exception {
+        System.out.println("\n-- operacoes de administrador --");
+        try (Conn adm = new Conn(); Conn c = new Conn()) {
+            String tokenAdmin = campo(json(adm.envia(req("login",
+                    "email", "admin@admin.com", "password", "admin"))), "token");
+            if (tokenAdmin == null) {
+                confere("login do administrador inicial", false);
+                return;
+            }
+
+            // Um usuario comum, para servir de alvo.
+            String u = nome(), e = u + "@email.com";
+            c.envia(req("register", "email", e, "user", u, "password", "senha123"));
+            String tokenComum = campo(json(c.envia(req("login", "email", e,
+                    "password", "senha123"))), "token");
+
+            // --- quem pode entrar ---
+            checa("400 token em formato invalido",
+                    adm.envia(req("admin_list_users", "token", "xyz")),
+                    "admin_list_users_response", "400", "Token em formato invalido");
+
+            checa("401 token bem formado que nao existe",
+                    adm.envia(req("admin_list_users", "token", TOKEN_FALSO)),
+                    "admin_list_users_response", "401", "Token invalido ou expirado");
+
+            checa("403 usuario comum nao lista usuarios",
+                    c.envia(req("admin_list_users", "token", tokenComum)),
+                    "admin_list_users_response", "403", "Permissao insuficiente");
+
+            // Regra 3.14: o perfil nunca vem do cliente. Mandar "role":"admin"
+            // na requisicao nao da poder nenhum.
+            checa("403 mesmo mandando role=admin na requisicao (regra 3.14)",
+                    c.envia(req("admin_list_users", "token", tokenComum, "role", "admin")),
+                    "admin_list_users_response", "403", "Permissao insuficiente");
+
+            // --- admin_list_users ---
+            JsonObject lista = json(adm.envia(req("admin_list_users", "token", tokenAdmin)));
+            checa("200 admin lista os usuarios",
+                    lista.toString(), "admin_list_users_response", "200",
+                    "Consulta realizada com sucesso");
+            confere("count e string e bate com o tamanho de users (regra 2.7)",
+                    campo(lista, "count") != null && lista.has("users")
+                            && campo(lista, "count").equals(
+                                    String.valueOf(lista.getAsJsonArray("users").size())));
+            confere("o alvo aparece na lista",
+                    lista.toString().contains("\"" + u + "\""));
+            confere("a lista nao devolve senha nem hash",
+                    !lista.toString().contains("senha123")
+                            && !lista.toString().contains("senha_hash"));
+
+            // --- admin_read_user ---
+            checa("400 target_user ausente",
+                    adm.envia(req("admin_read_user", "token", tokenAdmin)),
+                    "admin_read_user_response", "400", "Dados em formato invalido");
+
+            checa("404 usuario inexistente",
+                    adm.envia(req("admin_read_user", "token", tokenAdmin,
+                            "target_user", "naoexistemesmo")),
+                    "admin_read_user_response", "404", "Usuario nao encontrado");
+
+            JsonObject lido = json(adm.envia(req("admin_read_user", "token", tokenAdmin,
+                    "target_user", u)));
+            checa("200 admin le o cadastro de outro", lido.toString(),
+                    "admin_read_user_response", "200", "Consulta realizada com sucesso");
+            confere("a leitura traz user, email, role e created_at",
+                    u.equals(campo(lido, "user")) && e.equals(campo(lido, "email"))
+                            && "user".equals(campo(lido, "role"))
+                            && campo(lido, "created_at") != null);
+
+            // --- admin_update_user ---
+            checa("400 nenhum dado para atualizar (regra 2.13)",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin, "target_user", u,
+                            "user", "", "password", "", "role", "")),
+                    "admin_update_user_response", "400", "Nenhum dado para atualizar");
+
+            checa("400 a chave email e proibida (RNF 5.c)",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin, "target_user", u,
+                            "user", "", "password", "", "role", "", "email", "x@y.com")),
+                    "admin_update_user_response", "400", "Dados em formato invalido");
+
+            checa("404 alterar usuario inexistente",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin,
+                            "target_user", "naoexistemesmo",
+                            "user", "", "password", "novasenha1", "role", "")),
+                    "admin_update_user_response", "404", "Usuario nao encontrado");
+
+            checa("409 novo user ja em uso",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin, "target_user", u,
+                            "user", "admin", "password", "", "role", "")),
+                    "admin_update_user_response", "409", "Usuario ja esta em uso");
+
+            // --- promocao vale na hora, sem login novo (regra 3.14) ---
+            checa("200 promove o usuario a admin",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin, "target_user", u,
+                            "user", "", "password", "", "role", "admin")),
+                    "admin_update_user_response", "200", "Dados atualizados com sucesso");
+
+            checa("o token que o alvo ja tinha ganha poder na hora (regra 3.14)",
+                    c.envia(req("admin_list_users", "token", tokenComum)),
+                    "admin_list_users_response", "200", "Consulta realizada com sucesso");
+
+            checa("200 rebaixa o usuario de volta",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin, "target_user", u,
+                            "user", "", "password", "", "role", "user")),
+                    "admin_update_user_response", "200", "Dados atualizados com sucesso");
+
+            checa("e perde o poder na hora, com o mesmo token (regra 3.14)",
+                    c.envia(req("admin_list_users", "token", tokenComum)),
+                    "admin_list_users_response", "403", "Permissao insuficiente");
+
+            // --- o ultimo administrador nao cai ---
+            checa("403 nao rebaixa o ultimo administrador",
+                    adm.envia(req("admin_update_user", "token", tokenAdmin,
+                            "target_user", "admin",
+                            "user", "", "password", "", "role", "user")),
+                    "admin_update_user_response", "403",
+                    "Nao e possivel remover o ultimo administrador");
+
+            checa("403 nao remove o ultimo administrador",
+                    adm.envia(req("admin_delete_user", "token", tokenAdmin,
+                            "target_user", "admin")),
+                    "admin_delete_user_response", "403",
+                    "Nao e possivel remover o ultimo administrador");
+
+            // --- admin_delete_user ---
+            checa("404 remover usuario inexistente",
+                    adm.envia(req("admin_delete_user", "token", tokenAdmin,
+                            "target_user", "naoexistemesmo")),
+                    "admin_delete_user_response", "404", "Usuario nao encontrado");
+
+            checa("200 admin remove outro usuario",
+                    adm.envia(req("admin_delete_user", "token", tokenAdmin, "target_user", u)),
+                    "admin_delete_user_response", "200", "Usuario removido com sucesso");
+
+            checa("a sessao do removido cai junto",
+                    c.envia(req("read_user", "token", tokenComum)),
+                    "read_user_response", "401", "Token invalido ou expirado");
+
+            // Regra 3.13: user e email ficam livres para um cadastro novo.
+            checa("201 o user e o email removidos ficam livres (regra 3.13)",
+                    c.envia(req("register", "email", e, "user", u, "password", "senha123")),
+                    "register_response", "201", "Usuario cadastrado com sucesso");
+
+            // --- o logout tira o poder do token ---
+            adm.envia(req("logout", "token", tokenAdmin));
+            checa("depois do logout o token do admin nao vale mais",
+                    adm.envia(req("admin_list_users", "token", tokenAdmin)),
+                    "admin_list_users_response", "401", "Token invalido ou expirado");
         }
     }
 

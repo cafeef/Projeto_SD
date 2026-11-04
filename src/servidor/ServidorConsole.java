@@ -1,6 +1,10 @@
 package servidor;
 
 import servidor.dao.Banco;
+import servidor.handlers.AdminDeleteUserHandler;
+import servidor.handlers.AdminListUsersHandler;
+import servidor.handlers.AdminReadUserHandler;
+import servidor.handlers.AdminUpdateUserHandler;
 import servidor.handlers.DeleteUserHandler;
 import servidor.handlers.EcoHandler;
 import servidor.handlers.LoginHandler;
@@ -131,6 +135,10 @@ public class ServidorConsole {
         dispatcher.registrar("read_user", new ReadUserHandler());
         dispatcher.registrar("update_user", new UpdateUserHandler());
         dispatcher.registrar("delete_user", new DeleteUserHandler());
+        dispatcher.registrar("admin_list_users", new AdminListUsersHandler());
+        dispatcher.registrar("admin_read_user", new AdminReadUserHandler());
+        dispatcher.registrar("admin_update_user", new AdminUpdateUserHandler());
+        dispatcher.registrar("admin_delete_user", new AdminDeleteUserHandler());
         return dispatcher;
     }
 

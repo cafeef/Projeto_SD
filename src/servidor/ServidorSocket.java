@@ -59,6 +59,8 @@ public class ServidorSocket {
         // iniciar de novo pela tela, sem fechar a aplicacao.
         try {
             int encerradas = SessaoDAO.invalidarTodas();
+            // Nenhum token sobrevive ao reinicio, logo nenhum poder tambem.
+            AutorizacaoAdmin.limpar();
             if (encerradas > 0) {
                 log.registrar("Sessoes anteriores encerradas: " + encerradas);
             }

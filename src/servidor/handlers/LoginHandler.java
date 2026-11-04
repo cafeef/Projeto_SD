@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import protocolo.CampoInvalidoException;
 import protocolo.Resposta;
 import protocolo.Validador;
+import servidor.AutorizacaoAdmin;
 import servidor.Handler;
 import servidor.dao.SessaoDAO;
 import servidor.dao.UsuarioDAO;
@@ -46,6 +47,13 @@ public class LoginHandler implements Handler {
         String token = SessaoDAO.criarSeSemSessaoAtiva(usuario.getId());
         if (token == null) {
             return Resposta.de("login", "409", "Usuario ja possui sessao ativa");
+        }
+
+        // Regra 3.14: o token de uma conta admin entra na whitelist. O 'role'
+        // devolvido abaixo serve so para o cliente montar a tela -- quem decide
+        // o que a requisicao pode fazer e a lista, nunca o cliente.
+        if (usuario.isAdmin()) {
+            AutorizacaoAdmin.conceder(token);
         }
 
         JsonObject resposta = Resposta.de("login", "200", "Login realizado com sucesso");

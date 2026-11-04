@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 
 import protocolo.CampoInvalidoException;
 import protocolo.Validador;
+import servidor.AutorizacaoAdmin;
 import servidor.dao.SessaoDAO;
 import servidor.dao.UsuarioDAO;
 import servidor.modelo.Usuario;
@@ -53,6 +54,7 @@ public class DeleteUserHandler extends HandlerAutenticado {
 
         // As sessoes caem junto pelo ON DELETE CASCADE; a invalidacao explicita
         // deixa o efeito visivel mesmo que o esquema mude no futuro.
+        AutorizacaoAdmin.revogar(token);   // regra 3.14
         SessaoDAO.invalidarTodasDoUsuario(autor.getId());
         UsuarioDAO.remover(autor.getId());
 

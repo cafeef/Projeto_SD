@@ -154,6 +154,28 @@ public final class SessaoDAO {
         }
     }
 
+    /**
+     * Token da sessao ativa do usuario, ou null se ele nao esta logado.
+     *
+     * Serve a regra 3.14: para uma promocao valer na hora, o servidor precisa
+     * achar o token que o alvo ja esta usando e coloca-lo na whitelist. Como so
+     * existe uma sessao ativa por usuario (regra 3.5), o resultado e unico.
+     */
+    public static String tokenAtivoDoUsuario(int usuarioId) throws SQLException {
+        Timestamp limite = Timestamp.from(
+                Instant.now().minus(VALIDADE_MINUTOS, ChronoUnit.MINUTES));
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT token FROM sessoes"
+                             + " WHERE usuario_id = ? AND ativa = TRUE AND ultimo_uso >= ?")) {
+            ps.setInt(1, usuarioId);
+            ps.setTimestamp(2, limite);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
+    }
+
     /** Derruba todas as sessoes do usuario (usado no delete_user). */
     public static int invalidarTodasDoUsuario(int usuarioId) throws SQLException {
         try (Connection c = Banco.conexao();

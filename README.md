@@ -11,12 +11,21 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 | Entrega | Escopo | Situação |
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
-| EP-2 | Operações de administrador e CRUD de salas | pendente |
+| EP-2 | Operações de administrador e CRUD de salas | 🔸 admin pronto no servidor; salas pendentes |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
 
-Operações implementadas: `register`, `login`, `logout`, `read_user`,
-`update_user` e `delete_user`, com todos os códigos de status previstos no
-protocolo.
+Operações implementadas, com todos os códigos de status previstos no protocolo:
+
+- **EP-1** — `register`, `login`, `logout`, `read_user`, `update_user`,
+  `delete_user`
+- **EP-2** — `admin_list_users`, `admin_read_user`, `admin_update_user`,
+  `admin_delete_user` (servidor)
+
+O poder de administrador sai de uma **whitelist de tokens** (regra 3.14), e não
+do perfil gravado no banco nem de qualquer campo da requisição. Um token entra
+nela no login de uma conta `admin` ou quando um admin promove alguém que já está
+logado, e sai no rebaixamento, no logout e na remoção da conta — sempre na hora,
+sem exigir login novo. Um `role` enviado pelo cliente é ignorado.
 
 ## Requisitos
 
@@ -120,7 +129,7 @@ O cliente de console aceita `register`, `login`, `read`, `update`, `delete`,
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 201 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 236 verificações em
 seis suítes: validação de campos, tradução das mensagens, banco de dados,
 transporte e erros de protocolo, as seis operações da EP-1, e as telas mais a
 conexão do cliente. No fim, dispara três clientes simultâneos contra o mesmo

@@ -1,5 +1,6 @@
 import java.util.concurrent.CountDownLatch;
 
+import servidor.AutorizacaoAdmin;
 import servidor.Senhas;
 import servidor.dao.Banco;
 import servidor.dao.DadoDuplicadoException;
@@ -163,6 +164,28 @@ public class VerificaBanco {
         confere("depois do logout da sessao vencedora o login volta a passar",
                 SessaoDAO.criarSeSemSessaoAtiva(idJoao) != null);
         SessaoDAO.invalidarTodasDoUsuario(idJoao);
+
+        // --- whitelist de tokens de admin (regra 3.14) ---
+        String tokenAdm = SessaoDAO.criarSeSemSessaoAtiva(idJoao);
+        confere("tokenAtivoDoUsuario acha a sessao aberta",
+                tokenAdm != null && tokenAdm.equals(SessaoDAO.tokenAtivoDoUsuario(idJoao)));
+        AutorizacaoAdmin.limpar();
+        confere("token sem poder por padrao", !AutorizacaoAdmin.temPoder(tokenAdm));
+        AutorizacaoAdmin.conceder(tokenAdm);
+        confere("conceder da poder ao token", AutorizacaoAdmin.temPoder(tokenAdm));
+        AutorizacaoAdmin.sincronizar(tokenAdm, "user");
+        confere("rebaixar tira o poder do mesmo token",
+                !AutorizacaoAdmin.temPoder(tokenAdm));
+        AutorizacaoAdmin.sincronizar(tokenAdm, "admin");
+        confere("promover devolve o poder sem token novo",
+                AutorizacaoAdmin.temPoder(tokenAdm));
+        // Nenhum token sobrevive ao reinicio, logo nenhum poder tambem.
+        AutorizacaoAdmin.limpar();
+        confere("limpar esvazia a lista",
+                AutorizacaoAdmin.tamanho() == 0 && !AutorizacaoAdmin.temPoder(tokenAdm));
+        SessaoDAO.invalidarTodasDoUsuario(idJoao);
+        confere("sem sessao ativa nao ha token para promover",
+                SessaoDAO.tokenAtivoDoUsuario(idJoao) == null);
 
         // --- remocao (delete_user) ---
         String token3 = SessaoDAO.criar(idJoao);

@@ -2,6 +2,7 @@ package servidor.handlers;
 
 import com.google.gson.JsonObject;
 
+import servidor.AutorizacaoAdmin;
 import servidor.dao.SessaoDAO;
 import servidor.modelo.Usuario;
 
@@ -21,6 +22,7 @@ public class LogoutHandler extends HandlerAutenticado {
     protected JsonObject tratarAutenticado(JsonObject requisicao, Usuario autor, String token)
             throws Exception {
         SessaoDAO.invalidar(token);
+        AutorizacaoAdmin.revogar(token);   // regra 3.14
         return resposta("200", "Logout realizado com sucesso");
     }
 }
