@@ -566,7 +566,7 @@ public final class ClienteGUI extends JFrame {
                 token = campo(resposta, "token");
                 // O 'role' do login já monta a tela certa de saída; o
                 // read_user logo abaixo confirma.
-                ehAdmin = "admin".equals(campo(resposta, "role"));
+                ehAdmin = ofereceAdmin(campo(resposta, "role"));
                 aplicarPerfil();
                 loginSenha.setText("");
                 abasSessao.setSelectedIndex(0);
@@ -591,7 +591,7 @@ public final class ClienteGUI extends JFrame {
                 dadosCriadoEm.setText(campo(resposta, "created_at"));
                 // Um admin pode ter sido rebaixado por outro enquanto estava
                 // logado: o perfil é relido a cada leitura, não só no login.
-                ehAdmin = "admin".equals(campo(resposta, "role"));
+                ehAdmin = ofereceAdmin(campo(resposta, "role"));
                 aplicarPerfil();
             } else {
                 informar(resposta);
@@ -747,6 +747,25 @@ public final class ClienteGUI extends JFrame {
         JOptionPane.showMessageDialog(this, texto.toString(),
                 sucesso ? "Tudo certo" : "Atenção",
                 sucesso ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+    }
+
+    /**
+     * Se a tela deve oferecer as operações de administrador.
+     *
+     * "user" é não; "admin" é sim. Qualquer outra coisa -- inclusive a chave
+     * ausente -- também é sim, de propósito.
+     *
+     * O protocolo exige 'role' no 200 do login e do read_user, então contra o
+     * nosso servidor a distinção é sempre exata. Mas no teste de
+     * interoperabilidade quem responde é o servidor de outro grupo, e um campo
+     * que não veio não pode trancar a administradora fora das próprias
+     * operações: oferecendo, o pior caso é um 403 com mensagem clara na tela;
+     * escondendo, o pior caso é não existir botão nenhum e nada explicar por
+     * quê. Entre errar para o lado do erro visível e errar para o lado do
+     * silêncio, o visível é melhor.
+     */
+    private static boolean ofereceAdmin(String role) {
+        return !"user".equals(role);
     }
 
     private static String campo(JsonObject o, String chave) {

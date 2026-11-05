@@ -183,6 +183,10 @@ public class VerificaCliente {
                 "maria".equals(texto(remocao, "target_user")));
     }
 
+    // Nao ha teste de ofereceAdmin() aqui porque ele e privado da ClienteGUI;
+    // a decisao esta documentada no proprio metodo. Se um dia virar regra de
+    // protocolo, vale extrair como os montadores acima.
+
     // ----------------------------------------------------------------- apoio
 
     static JsonObject com(String chave, com.google.gson.JsonElement valor) {

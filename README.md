@@ -130,8 +130,25 @@ conversar com o servidor de outro grupo:
 ./run-cliente-console.sh
 ```
 
-O cliente de console aceita `register`, `login`, `read`, `update`, `delete`,
-`logout` e `raw <json>`, que envia um JSON arbitrário.
+O cliente de console aceita, além de `raw <json>` (que envia um JSON
+arbitrário) e `/sair`:
+
+| Entrega | Comandos |
+|---|---|
+| EP-1 | `register`, `login`, `read`, `update`, `delete`, `logout` |
+| EP-2 · usuários | `users`, `user`, `setuser`, `deluser` |
+| EP-2 · salas | `rooms`, `room`, `newroom`, `setroom`, `delroom` |
+
+Os comandos de sala separam os campos por `;`, e não por espaço, porque o nome
+e o local têm espaço dentro:
+
+```
+newroom Sala de Estudo B12;12;Bloco B - 1 andar;projetor, tv
+```
+
+Um `-` no lugar de um campo significa "não alterar" nas atualizações e "sem
+filtro" nas listagens. O `resources` é a exceção: ele viaja sempre como lista
+completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 
 ## Como testar
 
