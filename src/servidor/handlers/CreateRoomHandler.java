@@ -17,6 +17,9 @@ import java.util.List;
  * escolhe nenhum dos dois, e mandar 'room_id' ou 'room_status' aqui nao tem
  * efeito -- os campos simplesmente nao sao lidos.
  *
+ * O 'slots' diz em que horarios da grade da UTFPR a sala funciona ("2M1" e
+ * segunda, manha, primeira aula) e e obrigatorio (regra 8.2).
+ *
  * Sobre a precedencia 403 x 400: um usuario comum mandando dados invalidos
  * recebe 403, porque a checagem de permissao vem antes da validacao dos dados.
  * O protocolo nao define quem ganha (e a questao aberta 6 do documento), e esta
@@ -37,6 +40,7 @@ public class CreateRoomHandler extends HandlerAdmin {
         String capacidade;
         String localizacao;
         List<String> recursos;
+        List<String> slots;
         try {
             nome = Validador.obrigatorio(requisicao, "name");
             capacidade = Validador.obrigatorio(requisicao, "capacity");
@@ -44,13 +48,16 @@ public class CreateRoomHandler extends HandlerAdmin {
             // Obrigatorio tambem: o protocolo pede a lista sempre, e a sala sem
             // recurso nenhum se declara com [], nao omitindo a chave.
             recursos = Validador.listaDeTextos(requisicao, "resources");
+            // Regra 8.2: obrigatorio, com pelo menos um horario e sem repetir.
+            // Sala sem horario nenhum nao poderia receber reserva alguma.
+            slots = Validador.listaDeSlots(requisicao, true);
         } catch (CampoInvalidoException e) {
             return erro400();
         }
 
         int id;
         try {
-            id = SalaDAO.criar(nome, Integer.parseInt(capacidade), localizacao, recursos);
+            id = SalaDAO.criar(nome, Integer.parseInt(capacidade), localizacao, recursos, slots);
         } catch (DadoDuplicadoException e) {
             // O nome e unico no esquema, entao a deteccao resiste a dois
             // administradores cadastrando a mesma sala ao mesmo tempo: quem

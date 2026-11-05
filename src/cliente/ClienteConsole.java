@@ -37,15 +37,20 @@ import java.nio.charset.StandardCharsets;
  *   rooms                             lista todas
  *   rooms &lt;data&gt; &lt;inicio&gt; &lt;fim&gt; [capMin]
  *   rooms - - - &lt;capMin&gt;              so o filtro de capacidade
- *   room &lt;id&gt;                   le uma sala
- *   newroom &lt;nome&gt;;&lt;cap&gt;;&lt;local&gt;;&lt;recursos&gt;
- *   setroom &lt;id&gt;;&lt;nome|-&gt;;&lt;cap|-&gt;;&lt;local|-&gt;;&lt;recursos&gt;;&lt;estado|-&gt;
+ *   room &lt;id&gt; [data]            le uma sala; com data, traz a agenda
+ *   newroom &lt;nome&gt;;&lt;cap&gt;;&lt;local&gt;;&lt;recursos&gt;;&lt;horarios&gt;
+ *   setroom &lt;id&gt;;&lt;nome|-&gt;;&lt;cap|-&gt;;&lt;local|-&gt;;&lt;recursos&gt;;&lt;estado|-&gt;;&lt;horarios&gt;
  *   delroom &lt;id&gt;
  *
  * Os comandos de sala usam ';' entre os campos, e nao espaco, porque nome e
  * local tem espaco dentro. Os recursos vao separados por virgula, e viajam
  * SEMPRE como lista completa: campo vazio quer dizer "sala sem recurso nenhum",
  * nao "manter os de antes" -- e assim que o protocolo define 'resources'.
+ *
+ * Os horarios usam o codigo da UTFPR, tambem separados por virgula:
+ * "2M1, 2M2, 3T1". Ali o campo vazio quer dizer o CONTRARIO -- mantem os
+ * horarios atuais (regra 8.7) --, porque sala sem horario nenhum nao e estado
+ * valido, entao o vazio fica livre para significar outra coisa.
  *
  *   raw &lt;json&gt;                        envia um JSON qualquer, como esta
  *   /sair
@@ -224,14 +229,17 @@ public class ClienteConsole {
 
             case "room":
                 if (p.length < 2) {
-                    return erroUso("room <id>");
+                    return erroUso("room <id> [data]");
                 }
-                return comToken("read_room", "room_id", p[1]);
+                // Com data, a resposta traz a agenda do dia (regra 8.5).
+                return p.length >= 3
+                        ? comToken("read_room", "room_id", p[1], "date", p[2])
+                        : comToken("read_room", "room_id", p[1]);
 
             case "newroom": {
-                String[] c = campos(linha, 4);
+                String[] c = campos(linha, 5);
                 if (c == null) {
-                    return erroUso("newroom <nome>;<cap>;<local>;<recursos>");
+                    return erroUso("newroom <nome>;<cap>;<local>;<recursos>;<horarios>");
                 }
                 if (token == null) {
                     return erroUso("faca login primeiro");
@@ -242,14 +250,15 @@ public class ClienteConsole {
                 req.addProperty("capacity", c[1]);
                 req.addProperty("location", c[2]);
                 req.add("resources", PainelSalas.recursosDeTexto(c[3]));
+                req.add("slots", PainelSalas.slotsDeTexto(c[4]));
                 return GSON.toJson(req);
             }
 
             case "setroom": {
-                String[] c = campos(linha, 6);
+                String[] c = campos(linha, 7);
                 if (c == null) {
                     return erroUso("setroom <id>;<nome|->;<cap|->;<local|->;"
-                            + "<recursos>;<estado|->");
+                            + "<recursos>;<estado|->;<horarios>");
                 }
                 if (token == null) {
                     return erroUso("faca login primeiro");
@@ -265,6 +274,8 @@ public class ClienteConsole {
                 // enviada substitui a anterior inteira.
                 req.add("resources", PainelSalas.recursosDeTexto(c[4]));
                 req.addProperty("room_status", vazioSeTraco(c[5]));
+                // Regra 8.7: lista vazia mantem os horarios atuais.
+                req.add("slots", PainelSalas.slotsDeTexto(c[6]));
                 return GSON.toJson(req);
             }
 

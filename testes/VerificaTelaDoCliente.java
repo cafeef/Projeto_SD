@@ -181,6 +181,8 @@ public class VerificaTelaDoCliente {
             campoDe("painelSalas", "salaCapacidade").setText("12");
             campoDe("painelSalas", "salaLocal").setText("Bloco B - 1 andar");
             campoDe("painelSalas", "salaRecursos").setText("projetor, tv");
+            // 2026-12-01 e uma terca (digito 3 na grade da UTFPR).
+            campoDe("painelSalas", "salaHorarios").setText("3T1, 3T2, 3T3");
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Cadastrar nova sala"));
@@ -205,8 +207,8 @@ public class VerificaTelaDoCliente {
 
         naEdt(() -> {
             campoDe("painelSalas", "filtroData").setText("2026-12-01");
-            campoDe("painelSalas", "filtroInicio").setText("14:00");
-            campoDe("painelSalas", "filtroFim").setText("16:00");
+            campoDe("painelSalas", "filtroInicio").setText("13:00");
+            campoDe("painelSalas", "filtroFim").setText("14:40");
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Listar salas"));

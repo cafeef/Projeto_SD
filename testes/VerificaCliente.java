@@ -21,6 +21,7 @@ public class VerificaCliente {
     public static void main(String[] args) {
         requisicoesDeSala();
         recursos();
+        horarios();
         requisicoesDeAdmin();
 
         System.out.println("\n===== cliente: " + ok + " passaram, " + falhas + " falharam =====");
@@ -63,10 +64,10 @@ public class VerificaCliente {
 
         // --- create_room ---
         JsonObject cadastro = PainelSalas.requisicaoDeCadastro(TOKEN, " Sala B12 ", " 12 ",
-                " Bloco B ", "projetor, tv");
-        confere("create_room leva op, token e os quatro campos da sala",
+                " Bloco B ", "projetor, tv", "2M1, 3T1");
+        confere("create_room leva op, token e os cinco campos da sala",
                 cadastro.keySet().equals(java.util.Set.of(
-                        "op", "token", "name", "capacity", "location", "resources")));
+                        "op", "token", "name", "capacity", "location", "resources", "slots")));
         confere("create_room apara os espacos dos campos",
                 "Sala B12".equals(texto(cadastro, "name"))
                         && "12".equals(texto(cadastro, "capacity"))
@@ -80,11 +81,11 @@ public class VerificaCliente {
 
         // --- update_room ---
         JsonObject alteracao = PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "Sala B12", "16",
-                "Bloco B", "projetor", "inactive");
-        confere("update_room leva op, token, room_id e os cinco campos da sala",
+                "Bloco B", "projetor", "inactive", "");
+        confere("update_room leva op, token, room_id e os seis campos da sala",
                 alteracao.keySet().equals(java.util.Set.of(
                         "op", "token", "room_id", "name", "capacity", "location",
-                        "resources", "room_status")));
+                        "resources", "room_status", "slots")));
         confere("update_room identifica a sala por room_id",
                 "7".equals(texto(alteracao, "room_id")));
         confere("o estado escolhido no combo viaja como room_status",
@@ -96,6 +97,49 @@ public class VerificaCliente {
         confere("room_id viaja como string (regra 2.7)",
                 alteracao.get("room_id").getAsJsonPrimitive().isString());
 
+    }
+
+    static void horarios() {
+        System.out.println("\n-- campo de horarios (grade da UTFPR) --");
+
+        confere("um horario so",
+                PainelSalas.slotsDeTexto("2M1").toString().equals("[\"2M1\"]"));
+        confere("varios, com o espaco aparado",
+                PainelSalas.slotsDeTexto(" 2M1 , 3T1 ,4N2").toString()
+                        .equals("[\"2M1\",\"3T1\",\"4N2\"]"));
+        // O codigo da grade e maiusculo; punir quem digita "2m1" seria so
+        // transformar um deslize de teclado num 400 do servidor.
+        confere("minuscula vira maiuscula",
+                PainelSalas.slotsDeTexto("2m1, 3t1").toString()
+                        .equals("[\"2M1\",\"3T1\"]"));
+        confere("campo vazio vira lista vazia",
+                PainelSalas.slotsDeTexto("").size() == 0);
+        confere("virgula dobrada nao cria horario vazio",
+                PainelSalas.slotsDeTexto("2M1,,3T1").size() == 2);
+
+        // Regra 8.2 no create_room: obrigatorio.
+        JsonObject semHorario = PainelSalas.requisicaoDeCadastro(TOKEN, "Sala X", "10",
+                "Bloco A", "", "");
+        confere("create_room sem horario manda slots vazio, e o servidor recusa",
+                semHorario.getAsJsonArray("slots").size() == 0);
+
+        // Regra 8.7 no update_room: vazio MANTEM, nao apaga.
+        JsonObject semMudarHorario = PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "",
+                "", "", "");
+        confere("update_room com horario em branco manda [] (= nao alterar)",
+                semMudarHorario.has("slots")
+                        && semMudarHorario.getAsJsonArray("slots").size() == 0);
+        JsonObject comHorario = PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "",
+                "", "", "5N1, 5N2");
+        confere("update_room com horarios manda a lista nova",
+                comHorario.getAsJsonArray("slots").toString().equals("[\"5N1\",\"5N2\"]"));
+
+        // A tabela e o formulario conversam pelo mesmo texto.
+        JsonObject resposta = com("slots", PainelSalas.slotsDeTexto("2M1, 3T1"));
+        confere("o array da resposta volta para '2M1, 3T1'",
+                "2M1, 3T1".equals(PainelSalas.listaParaTexto(resposta, "slots")));
+        confere("resposta sem 'slots' nao quebra a tabela",
+                "".equals(PainelSalas.listaParaTexto(new JsonObject(), "slots")));
     }
 
     static void recursos() {

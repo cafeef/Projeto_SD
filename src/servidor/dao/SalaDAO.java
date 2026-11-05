@@ -37,7 +37,8 @@ public final class SalaDAO {
      * @throws DadoDuplicadoException se o nome ja existe (409)
      */
     public static int criar(String nome, int capacidade, String localizacao,
-                            List<String> recursos) throws SQLException, DadoDuplicadoException {
+                            List<String> recursos, List<String> slots)
+            throws SQLException, DadoDuplicadoException {
         try (Connection c = Banco.conexao()) {
             boolean autoCommitAnterior = c.getAutoCommit();
             c.setAutoCommit(false);
@@ -57,6 +58,7 @@ public final class SalaDAO {
                     }
                 }
                 gravarRecursos(c, id, recursos);
+                gravarSlots(c, id, slots);
                 c.commit();
                 return id;
             } catch (SQLException e) {
@@ -87,7 +89,8 @@ public final class SalaDAO {
                         rs.getInt("capacidade"),
                         rs.getString("localizacao"),
                         recursosDe(c, id),
-                        rs.getString("estado"));
+                        rs.getString("estado"),
+                        slotsDe(c, id));
             }
         }
     }
@@ -130,11 +133,22 @@ public final class SalaDAO {
                 }
             }
 
+            // Mesma ideia para os horarios: uma consulta para todas as salas.
+            Map<Integer, List<String>> slots = new LinkedHashMap<>();
+            try (PreparedStatement ps3 = c.prepareStatement(
+                    "SELECT sala_id, slot FROM sala_slots");
+                 ResultSet rs = ps3.executeQuery()) {
+                while (rs.next()) {
+                    slots.computeIfAbsent(rs.getInt("sala_id"), k -> new ArrayList<>())
+                            .add(rs.getString("slot"));
+                }
+            }
+
             List<Sala> salas = new ArrayList<>();
             for (Map.Entry<Integer, Object[]> e : cruas.entrySet()) {
                 Object[] v = e.getValue();
                 salas.add(new Sala(e.getKey(), (String) v[0], (Integer) v[1], (String) v[2],
-                        recursos.get(e.getKey()), (String) v[3]));
+                        recursos.get(e.getKey()), (String) v[3], slots.get(e.getKey())));
             }
             return salas;
         }
@@ -151,7 +165,7 @@ public final class SalaDAO {
      * @throws DadoDuplicadoException se o novo nome ja pertence a outra sala
      */
     public static boolean atualizar(int id, String nome, Integer capacidade, String localizacao,
-                                    List<String> recursos, String estado)
+                                    List<String> recursos, String estado, List<String> slots)
             throws SQLException, DadoDuplicadoException {
         List<String> colunas = new ArrayList<>();
         List<Object> valores = new ArrayList<>();
@@ -199,6 +213,16 @@ public final class SalaDAO {
                         ps.executeUpdate();
                     }
                     gravarRecursos(c, id, recursos);
+                }
+                // Regra 8.7: lista nova substitui a antiga inteira; null (que e
+                // como o handler traduz "ausente" e "[]") preserva.
+                if (slots != null && !slots.isEmpty()) {
+                    try (PreparedStatement ps = c.prepareStatement(
+                            "DELETE FROM sala_slots WHERE sala_id = ?")) {
+                        ps.setInt(1, id);
+                        ps.executeUpdate();
+                    }
+                    gravarSlots(c, id, slots);
                 }
                 c.commit();
                 return true;
@@ -284,6 +308,31 @@ public final class SalaDAO {
         return ocupadas;
     }
 
+    /**
+     * Quem reservou a sala naquele periodo, para a agenda do read_room.
+     *
+     * @return {usuario, id_da_reserva}, ou null se o periodo esta livre
+     */
+    public static String[] donoDaReserva(int salaId, LocalDate dia, LocalTime inicio,
+                                         LocalTime fim) throws SQLException {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT u.usuario, r.id FROM reservas r"
+                             + " JOIN usuarios u ON u.id = r.usuario_id"
+                             + " WHERE r.sala_id = ? AND r.ativa = TRUE AND r.dia = ?"
+                             + " AND r.inicio < ? AND r.fim > ? LIMIT 1")) {
+            ps.setInt(1, salaId);
+            ps.setDate(2, Date.valueOf(dia));
+            ps.setTime(3, Time.valueOf(fim));
+            ps.setTime(4, Time.valueOf(inicio));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next()
+                        ? new String[] {rs.getString(1), String.valueOf(rs.getInt(2))}
+                        : null;
+            }
+        }
+    }
+
     /** Quantas salas existem. Usado pelos testes e pela tela do cliente. */
     public static int contar() throws SQLException {
         try (Connection c = Banco.conexao();
@@ -309,6 +358,37 @@ public final class SalaDAO {
             }
             ps.executeBatch();
         }
+    }
+
+    private static void gravarSlots(Connection c, int salaId, List<String> slots)
+            throws SQLException {
+        if (slots == null || slots.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO sala_slots (sala_id, slot) VALUES (?, ?)")) {
+            for (String slot : slots) {
+                ps.setInt(1, salaId);
+                ps.setString(2, slot);
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    private static List<String> slotsDe(Connection c, int salaId) throws SQLException {
+        List<String> slots = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT slot FROM sala_slots WHERE sala_id = ?")) {
+            ps.setInt(1, salaId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    slots.add(rs.getString(1));
+                }
+            }
+        }
+        // A ordem da grade e imposta pela propria Sala, no construtor.
+        return slots;
     }
 
     private static List<String> recursosDe(Connection c, int salaId) throws SQLException {

@@ -26,6 +26,9 @@ public class VerificaOperacoes {
     static final SecureRandom RND = new SecureRandom();
     static final String TOKEN_FALSO = "a".repeat(64);
 
+    /** Horarios da grade da UTFPR usados nas salas de teste (regra 8.1). */
+    static final String SLOTS_PADRAO = "\"2M1\",\"2M2\",\"3T1\",\"3T2\"";
+
     /** Vira false se alguma 'message' recebida tiver caractere fora do ASCII. */
     static boolean todasSemAcento = true;
     static String primeiraComAcento = null;
@@ -589,6 +592,39 @@ public class VerificaOperacoes {
             confere("o 201 devolve room_id numerico",
                     roomId != null && roomId.matches("^[0-9]{1,10}$"));
 
+            // ------------------------------------- horarios (regra 8.1/8.2)
+            checa("400 create_room sem a chave slots (regra 8.2)",
+                    adm.envia(req("create_room", "token", tokenAdmin, "name", "Sala Sem Grade",
+                            "capacity", "10", "location", "Bloco A")
+                            .replace("}", ",\"resources\":[]}")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 slots vazio: sala sem horario nao receberia reserva",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Grade Vazia", "10",
+                            "Bloco A", "", "")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            // "M1" nao diz em que dia; o codigo da UTFPR comeca pelo dia.
+            checa("400 horario sem o dia (M1 em vez de 2M1) (regra 8.1)",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Grade Torta", "10",
+                            "Bloco A", "", "\"2M1\",\"M1\"")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 domingo nao existe na grade da UTFPR",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Domingo", "10",
+                            "Bloco A", "", "\"1M1\"")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 aula que nao existe no turno da noite (N6)",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Noite Longa", "10",
+                            "Bloco A", "", "\"2N6\"")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            checa("400 horario repetido na mesma sala (regra 8.2)",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala Repetida", "10",
+                            "Bloco A", "", "\"2M1\",\"2M1\"")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
             checa("409 nome de sala repetido",
                     adm.envia(reqSala("create_room", tokenAdmin, nomeSala, "20", "Bloco Z", "")),
                     "create_room_response", "409", "Sala ja cadastrada");
@@ -627,6 +663,51 @@ public class VerificaOperacoes {
             confere("read_room nao devolve 'available' (nao foi perguntado horario)",
                     !sala.has("available"));
 
+            // --------------------------------- agenda do dia (regra 8.5)
+            //
+            // E o que o item (e) da Entrega 2 pede: ler os registros da sala
+            // com os horarios e quem reservou. Sem reservas cadastradas -- que
+            // sao da EP-3 -- todo horario aparece livre, e a estrutura ja e a
+            // definitiva.
+
+            confere("sem 'date' a resposta NAO traz agenda", !sala.has("agenda"));
+
+            // 2026-12-01 e terca; a sala funciona em 3T1 e 3T2.
+            JsonObject comAgenda = json(c.envia(req("read_room", "token", tokenComum,
+                    "room_id", roomId, "date", "2026-12-01")));
+            confere("200 read_room com data",
+                    "200".equals(campo(comAgenda, "status")) && comAgenda.has("agenda"));
+            confere("a resposta devolve a data perguntada",
+                    "2026-12-01".equals(campo(comAgenda, "date")));
+            var agenda = comAgenda.getAsJsonArray("agenda");
+            confere("a agenda traz so os horarios da sala naquele dia da semana",
+                    agenda.size() == 2);
+            confere("a agenda vem na ordem da grade, nao na de cadastro",
+                    "3T1".equals(campo(agenda.get(0).getAsJsonObject(), "slot"))
+                            && "3T2".equals(campo(agenda.get(1).getAsJsonObject(), "slot")));
+            JsonObject primeiro = agenda.get(0).getAsJsonObject();
+            confere("cada horario traz inicio e fim da tabela da UTFPR",
+                    "13:00".equals(campo(primeiro, "start_time"))
+                            && "13:50".equals(campo(primeiro, "end_time")));
+            confere("sem reserva, o horario aparece livre",
+                    "livre".equals(campo(primeiro, "slot_status")));
+            confere("horario livre nao tem dono", !primeiro.has("user"));
+
+            // 2026-12-02 e quarta, e a sala nao funciona na quarta.
+            confere("dia em que a sala nao funciona devolve agenda vazia",
+                    json(c.envia(req("read_room", "token", tokenComum, "room_id", roomId,
+                            "date", "2026-12-02"))).getAsJsonArray("agenda").size() == 0);
+
+            // 2026-12-06 e domingo, que nao existe na grade da UTFPR.
+            confere("domingo devolve agenda vazia",
+                    json(c.envia(req("read_room", "token", tokenComum, "room_id", roomId,
+                            "date", "2026-12-06"))).getAsJsonArray("agenda").size() == 0);
+
+            checa("400 data que nao existe no calendario",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", roomId,
+                            "date", "2026-02-31")),
+                    "read_room_response", "400", "Dados em formato invalido");
+
             // ----------------------------------------------------- list_rooms
             String rLista = c.envia(req("list_rooms", "token", tokenComum));
             checa("200 listagem sem filtros",
@@ -664,11 +745,27 @@ public class VerificaOperacoes {
             // A regex aprova a data, o calendario nao.
             checa("400 data que casa com a regex mas nao existe",
                     c.envia(req("list_rooms", "token", tokenComum, "date", "2026-02-31",
-                            "start_time", "14:00", "end_time", "16:00")),
+                            "start_time", "13:00", "end_time", "14:40")),
                     "list_rooms_response", "400", "Filtros em formato invalido");
 
+            // Regra 8.3: inicio e fim tem que ser de aula da grade da UTFPR.
+            checa("400 horario que nao existe na grade da UTFPR (regra 8.3)",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01",
+                            "start_time", "14:00", "end_time", "16:00")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            checa("400 inicio no meio de uma aula",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01",
+                            "start_time", "13:15", "end_time", "14:40")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            checa("400 fim no meio de uma aula",
+                    c.envia(req("list_rooms", "token", tokenComum, "date", "2026-12-01",
+                            "start_time", "13:00", "end_time", "14:00")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+
+            // 2026-12-01 e uma terca (digito 3 na grade), e 13:00-14:40 sao
+            // as aulas T1 e T2 -- que e exatamente onde a sala funciona.
             String rComHorario = c.envia(req("list_rooms", "token", tokenComum,
-                    "date", "2026-12-01", "start_time", "14:00", "end_time", "16:00"));
+                    "date", "2026-12-01", "start_time", "13:00", "end_time", "14:40"));
             checa("200 listagem com o trio de horario",
                     rComHorario, "list_rooms_response", "200", "Consulta realizada com sucesso");
             JsonObject comHorario = json(rComHorario);
@@ -749,7 +846,7 @@ public class VerificaOperacoes {
                     adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "", "inactive")),
                     "update_room_response", "200", "Sala atualizada com sucesso");
             String rInativa = c.envia(req("list_rooms", "token", tokenComum,
-                    "date", "2026-12-01", "start_time", "14:00", "end_time", "16:00"));
+                    "date", "2026-12-01", "start_time", "13:00", "end_time", "14:40"));
             boolean inativaIndisponivel = false;
             for (var item : json(rInativa).getAsJsonArray("rooms")) {
                 JsonObject o = item.getAsJsonObject();
@@ -760,6 +857,21 @@ public class VerificaOperacoes {
             }
             confere("sala inactive aparece na lista com available \"false\"",
                     inativaIndisponivel);
+
+            // Sala parada nao aceita reserva nenhuma, entao todo horario dela
+            // esta indisponivel mesmo sem ninguem ter reservado (regra 8.5).
+            var agendaParada = json(c.envia(req("read_room", "token", tokenComum,
+                    "room_id", roomId, "date", "2026-12-01"))).getAsJsonArray("agenda");
+            boolean todosIndisponiveis = agendaParada.size() == 2;
+            for (var item : agendaParada) {
+                if (!"indisponivel".equals(campo(item.getAsJsonObject(), "slot_status"))) {
+                    todosIndisponiveis = false;
+                }
+            }
+            confere("na sala inactive todo horario da agenda vem indisponivel",
+                    todosIndisponiveis);
+            confere("horario indisponivel por sala parada nao inventa um dono",
+                    !agendaParada.get(0).getAsJsonObject().has("user"));
 
             // ---------------------------------------------------- delete_room
             checa("400 delete_room sem room_id",
@@ -858,18 +970,32 @@ public class VerificaOperacoes {
      */
     static String reqSala(String op, String token, String nome, String capacidade,
                           String local, String itens) {
+        return reqSala(op, token, nome, capacidade, local, itens, SLOTS_PADRAO);
+    }
+
+    /** @param slots o conteudo do array 'slots', ja em JSON */
+    static String reqSala(String op, String token, String nome, String capacidade,
+                          String local, String itens, String slots) {
         return "{\"op\":\"" + op + "\",\"token\":\"" + token
                 + "\",\"name\":\"" + nome + "\",\"capacity\":\"" + capacidade
-                + "\",\"location\":\"" + local + "\",\"resources\":[" + itens + "]}";
+                + "\",\"location\":\"" + local + "\",\"resources\":[" + itens
+                + "],\"slots\":[" + slots + "]}";
     }
 
     /** Monta um update_room com as seis chaves que o protocolo exige. */
     static String reqAtualizaSala(String token, String roomId, String nome, String capacidade,
                                   String local, String itens, String estado) {
+        return reqAtualizaSala(token, roomId, nome, capacidade, local, itens, estado, "");
+    }
+
+    /** @param slots o conteudo do array 'slots'; vazio quer dizer "nao alterar" */
+    static String reqAtualizaSala(String token, String roomId, String nome, String capacidade,
+                                  String local, String itens, String estado, String slots) {
         return "{\"op\":\"update_room\",\"token\":\"" + token
                 + "\",\"room_id\":\"" + roomId + "\",\"name\":\"" + nome
                 + "\",\"capacity\":\"" + capacidade + "\",\"location\":\"" + local
-                + "\",\"resources\":[" + itens + "],\"room_status\":\"" + estado + "\"}";
+                + "\",\"resources\":[" + itens + "],\"room_status\":\"" + estado
+                + "\",\"slots\":[" + slots + "]}";
     }
 
     /** Nome de usuario aleatorio: so letras minusculas, como manda a regex. */

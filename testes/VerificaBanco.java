@@ -201,7 +201,7 @@ public class VerificaBanco {
         confere("banco novo comeca sem sala", SalaDAO.contar() == 0);
 
         int idB12 = SalaDAO.criar("Sala de Estudo B12", 12, "Bloco B - 1 andar",
-                Arrays.asList("projetor", "tv"));
+                Arrays.asList("projetor", "tv"), Arrays.asList("3T1", "2M1", "2M2"));
         confere("cadastro de sala devolve id", idB12 > 0);
 
         Sala b12 = SalaDAO.buscarPorId(idB12);
@@ -216,13 +216,21 @@ public class VerificaBanco {
                 b12 != null && b12.getRecursos().equals(Arrays.asList("projetor", "tv")));
         confere("sala inexistente devolve null", SalaDAO.buscarPorId(999999) == null);
 
+        // Os horarios voltam SEMPRE na ordem da grade da UTFPR, nao na ordem
+        // em que foram gravados: a agenda do read_room depende disso.
+        confere("os horarios voltam na ordem da grade, nao na de gravacao",
+                b12 != null && b12.getSlots().equals(Arrays.asList("2M1", "2M2", "3T1")));
+
         // O UNIQUE no nome e o que entrega o 409 "Sala ja cadastrada".
         salaDuplicada("sala com nome repetido e recusada", "Sala de Estudo B12", 8, "Bloco C");
 
-        int idVazia = SalaDAO.criar("Sala Sem Recurso", 4, "Bloco A", List.of());
+        int idVazia = SalaDAO.criar("Sala Sem Recurso", 4, "Bloco A", List.of(),
+                List.of("4N1"));
         Sala vazia = SalaDAO.buscarPorId(idVazia);
         confere("sala sem recurso volta com lista vazia, nao nula",
                 vazia != null && vazia.getRecursos().isEmpty());
+        confere("a sala do turno da noite guardou o horario dela",
+                vazia != null && vazia.getSlots().equals(List.of("4N1")));
 
         // --- listagem e filtro de capacidade ---
         confere("listagem traz as duas salas", SalaDAO.listar(null).size() == 2);
@@ -237,34 +245,43 @@ public class VerificaBanco {
                 SalaDAO.listar(null).get(0).getRecursos().size() == 2);
 
         // --- atualizacao: null mantem, valor troca ---
-        SalaDAO.atualizar(idB12, null, 16, null, null, null);
+        SalaDAO.atualizar(idB12, null, 16, null, null, null, null);
         Sala depoisDaCapacidade = SalaDAO.buscarPorId(idB12);
         confere("capacidade trocada", depoisDaCapacidade.getCapacidade() == 16);
         confere("nome preservado quando vem null",
                 "Sala de Estudo B12".equals(depoisDaCapacidade.getNome()));
         confere("recursos preservados quando a lista vem null",
                 depoisDaCapacidade.getRecursos().size() == 2);
+        confere("horarios preservados quando a lista vem null",
+                depoisDaCapacidade.getSlots().size() == 3);
+
+        // Regra 8.7: lista nova substitui a antiga inteira.
+        SalaDAO.atualizar(idB12, null, null, null, null, null, List.of("6T5", "6T4"));
+        confere("lista nova de horarios substitui a antiga, ja ordenada",
+                SalaDAO.buscarPorId(idB12).getSlots().equals(Arrays.asList("6T4", "6T5")));
+        SalaDAO.atualizar(idB12, null, null, null, null, null,
+                Arrays.asList("2M1", "2M2", "3T1"));
 
         // A lista de recursos chega COMPLETA: a vazia significa "nenhum
         // recurso", e nao "nao alterar" -- so o null preserva.
-        SalaDAO.atualizar(idB12, null, null, null, List.of(), null);
+        SalaDAO.atualizar(idB12, null, null, null, List.of(), null, null);
         confere("lista vazia apaga os recursos",
                 SalaDAO.buscarPorId(idB12).getRecursos().isEmpty());
 
-        SalaDAO.atualizar(idB12, null, null, null, Arrays.asList("quadro", "tv", "projetor"), null);
+        SalaDAO.atualizar(idB12, null, null, null, Arrays.asList("quadro", "tv", "projetor"), null, null);
         confere("lista nova substitui a antiga inteira",
                 SalaDAO.buscarPorId(idB12).getRecursos()
                         .equals(Arrays.asList("quadro", "tv", "projetor")));
 
-        SalaDAO.atualizar(idB12, null, null, null, null, "inactive");
+        SalaDAO.atualizar(idB12, null, null, null, null, "inactive", null);
         confere("estado inactive e gravado", !SalaDAO.buscarPorId(idB12).estaAtiva());
-        SalaDAO.atualizar(idB12, null, null, null, null, "active");
+        SalaDAO.atualizar(idB12, null, null, null, null, "active", null);
 
         salaRenomeadaDuplicada("renomear para um nome ja usado e recusado", idB12, "Sala Sem Recurso");
         confere("a recusa nao deixou o nome pela metade",
                 "Sala de Estudo B12".equals(SalaDAO.buscarPorId(idB12).getNome()));
         confere("atualizar sala inexistente devolve false",
-                !SalaDAO.atualizar(999999, "Outro Nome", null, null, null, null));
+                !SalaDAO.atualizar(999999, "Outro Nome", null, null, null, null, null));
 
         confere("existeNome encontra a sala", SalaDAO.existeNome("Sala de Estudo B12"));
         confere("existeNome nao inventa sala", !SalaDAO.existeNome("Sala Que Nao Existe"));
@@ -333,7 +350,7 @@ public class VerificaBanco {
     static void salaDuplicada(String nome, String sala, int capacidade, String local)
             throws Exception {
         try {
-            SalaDAO.criar(sala, capacidade, local, List.of());
+            SalaDAO.criar(sala, capacidade, local, List.of(), List.of("2M1"));
             confere(nome, false);
         } catch (DadoDuplicadoException e) {
             confere(nome, true);
@@ -342,7 +359,7 @@ public class VerificaBanco {
 
     static void salaRenomeadaDuplicada(String nome, int id, String novoNome) throws Exception {
         try {
-            SalaDAO.atualizar(id, novoNome, null, null, null, null);
+            SalaDAO.atualizar(id, novoNome, null, null, null, null, null);
             confere(nome, false);
         } catch (DadoDuplicadoException e) {
             confere(nome, true);

@@ -7,8 +7,10 @@ import com.google.gson.JsonPrimitive;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -51,6 +53,8 @@ public final class Validador {
         m.put("location",       Pattern.compile("^[A-Za-z0-9 ,.-]{1,60}$"));
         m.put("room_status",    Pattern.compile("^(active|inactive)$"));
         m.put("min_capacity",   Pattern.compile("^[1-9][0-9]{0,3}$"));
+        // Horario da grade da UTFPR: dia + turno + aula (regra 8.1).
+        m.put("slot",           Pattern.compile("^[2-7](M[1-6]|T[1-6]|N[1-5])$"));
         // --- Reservas ---
         m.put("reservation_id", Pattern.compile("^[0-9]{1,10}$"));
         m.put("date",           Pattern.compile("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"));
@@ -182,6 +186,43 @@ public final class Validador {
             itens.add(item.getAsString());
         }
         return itens;
+    }
+
+    /**
+     * Le o 'slots' de uma sala: a lista de horarios em que ela funciona.
+     *
+     * Alem do formato de cada item, exige o que a regra 8.2 manda: pelo menos
+     * um horario e nenhum repetido. Sala sem horario nenhum nao poderia receber
+     * reserva alguma, e horario repetido faria a agenda mostrar a mesma aula
+     * duas vezes.
+     *
+     * @param obrigatoria true no create_room; false no update_room, onde a
+     *                    lista vazia significa "nao alterar" (regra 8.7)
+     * @throws CampoInvalidoException se a chave falta (quando obrigatoria), nao
+     *         e array, tem item fora do formato, repetido, ou a lista veio
+     *         vazia numa operacao que exige pelo menos um
+     */
+    public static List<String> listaDeSlots(JsonObject requisicao, boolean obrigatoria)
+            throws CampoInvalidoException {
+        List<String> slots = listaDeTextos(requisicao, "slots");
+        if (slots.isEmpty()) {
+            if (obrigatoria) {
+                throw new CampoInvalidoException("slots", CampoInvalidoException.Motivo.VAZIO);
+            }
+            return slots;
+        }
+        Set<String> vistos = new LinkedHashSet<>();
+        for (String slot : slots) {
+            if (!formatoValido("slot", slot)) {
+                throw new CampoInvalidoException("slots",
+                        CampoInvalidoException.Motivo.FORMATO_INVALIDO);
+            }
+            if (!vistos.add(slot)) {
+                throw new CampoInvalidoException("slots",
+                        CampoInvalidoException.Motivo.FORMATO_INVALIDO);
+            }
+        }
+        return slots;
     }
 
     /**

@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import protocolo.CampoInvalidoException;
+import protocolo.Horarios;
 import protocolo.Validador;
 import servidor.dao.SalaDAO;
 import servidor.modelo.Sala;
@@ -35,6 +36,26 @@ public class ListRoomsHandler extends HandlerAutenticado {
 
     public ListRoomsHandler() {
         super("list_rooms", "Filtros em formato invalido");
+    }
+
+    /**
+     * Diz se a sala funciona em TODAS as aulas do periodo pedido.
+     *
+     * Basta uma aula fora do funcionamento para a sala nao servir: reservar
+     * das 13:00 as 14:40 numa terca exige que a sala funcione em 3T1 e em 3T2.
+     * Domingo nunca passa, porque a grade da UTFPR nao tem domingo.
+     */
+    private static boolean funcionaNoPeriodo(Sala sala, LocalDate dia, List<String> aulas) {
+        Character digito = Horarios.digitoDoDia(dia);
+        if (digito == null || aulas.isEmpty()) {
+            return false;
+        }
+        for (String aula : aulas) {
+            if (!sala.getSlots().contains(digito + aula)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -75,6 +96,13 @@ public class ListRoomsHandler extends HandlerAutenticado {
             if (!horaFinal.isAfter(horaInicial)) {
                 return erro400();
             }
+            // Regra 8.3: em consultas, o inicio e sempre o comeco de uma aula
+            // da grade e o fim e sempre o fim de uma aula. "Esta livre das
+            // 14:15 as 15:00?" nao e pergunta respondivel numa grade de aulas
+            // fixas -- nao existe nada para reservar nesse recorte.
+            if (!Horarios.ehInicioDeAula(horaInicial) || !Horarios.ehFimDeAula(horaFinal)) {
+                return erro400();
+            }
         }
 
         List<Sala> salas = SalaDAO.listar(
@@ -86,13 +114,23 @@ public class ListRoomsHandler extends HandlerAutenticado {
                 ? SalaDAO.ocupadasNoPeriodo(dia, horaInicial, horaFinal)
                 : null;
 
+        // As aulas que o periodo cobre, para conferir contra o funcionamento
+        // de cada sala. Calculadas uma vez so, fora do laco.
+        List<String> aulasPedidas = pedacosDoTrio == 3
+                ? Horarios.aulasEntre(horaInicial, horaFinal)
+                : List.of();
+
         JsonArray lista = new JsonArray();
         for (Sala sala : salas) {
             Boolean disponivel = null;
             if (ocupadas != null) {
-                // Sala "inactive" nao aceita reserva, logo nao esta disponivel,
-                // mesmo com a agenda livre.
-                disponivel = sala.estaAtiva() && !ocupadas.contains(sala.getId());
+                // Tres coisas tornam a sala indisponivel, e basta uma:
+                //  - estar "inactive", que nao aceita reserva nenhuma;
+                //  - nao funcionar em alguma das aulas do periodo (regra 8.4);
+                //  - ja ter reserva que colida com o periodo.
+                disponivel = sala.estaAtiva()
+                        && funcionaNoPeriodo(sala, dia, aulasPedidas)
+                        && !ocupadas.contains(sala.getId());
             }
             lista.add(SalaJson.de(sala, disponivel));
         }

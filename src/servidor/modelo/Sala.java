@@ -1,5 +1,7 @@
 package servidor.modelo;
 
+import protocolo.Horarios;
+
 import java.util.Collections;
 import java.util.List;
 
@@ -20,9 +22,10 @@ public class Sala {
     private final String localizacao;
     private final List<String> recursos;
     private final String estado;
+    private final List<String> slots;
 
     public Sala(int id, String nome, int capacidade, String localizacao,
-                List<String> recursos, String estado) {
+                List<String> recursos, String estado, List<String> slots) {
         this.id = id;
         this.nome = nome;
         this.capacidade = capacidade;
@@ -31,6 +34,12 @@ public class Sala {
                 ? Collections.emptyList()
                 : Collections.unmodifiableList(recursos);
         this.estado = estado;
+        // Sempre na ordem da grade da UTFPR, venham como vierem do banco: a
+        // agenda do read_room tem que sair nessa ordem (regra 8.5), e ordenar
+        // aqui garante isso para todo mundo que use a Sala.
+        this.slots = slots == null
+                ? Collections.emptyList()
+                : Collections.unmodifiableList(Horarios.ordenar(slots));
     }
 
     public int getId() {
@@ -57,6 +66,19 @@ public class Sala {
         return recursos;
     }
 
+    /**
+     * Corresponde a 'slots': os horarios em que a sala funciona, no codigo da
+     * UTFPR, ja na ordem da grade. Lista imutavel.
+     */
+    public List<String> getSlots() {
+        return slots;
+    }
+
+    /** Os horarios da sala que caem num dia, na ordem da grade (regra 8.5). */
+    public List<String> slotsDoDia(java.time.LocalDate dia) {
+        return Horarios.slotsDoDia(slots, dia);
+    }
+
     /** Corresponde a 'room_status': "active" ou "inactive". */
     public String getEstado() {
         return estado;
@@ -69,6 +91,7 @@ public class Sala {
 
     @Override
     public String toString() {
-        return "Sala{" + id + ", " + nome + ", " + capacidade + " lugares, " + estado + "}";
+        return "Sala{" + id + ", " + nome + ", " + capacidade + " lugares, " + estado
+                + ", " + slots.size() + " horarios}";
     }
 }

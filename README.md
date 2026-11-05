@@ -11,7 +11,7 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 | Entrega | Escopo | Situação |
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
-| EP-2 | Operações de administrador e CRUD de salas | ✅ todas as operações do protocolo, servidor e cliente |
+| EP-2 | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
@@ -32,12 +32,15 @@ Nas salas, **cadastrar, alterar e remover exigem administrador; ler e listar,
 não** (regra 3.7) — quem vai reservar precisa ver a sala. O `room_id` é gerado
 pelo servidor, nunca escolhido pelo cliente, e a sala nasce `active`.
 
-O cadastro de sala segue o `create_room` do protocolo — `name`, `capacity`,
-`location` e `resources`. **Dias da semana e horários de funcionamento da sala
-ainda não existem no protocolo** (versão 2.6), e por isso não aparecem aqui;
-quando a turma fechar esses campos, eles entram na tabela `salas` e nos dois
-formulários. A agenda de quem reservou cada sala vem de `list_reservations`
-filtrando por `room_id`, que é operação da EP-3.
+Cada sala tem **horários de funcionamento** no código da UTFPR: `2M1` é
+segunda-feira, turno da manhã, primeira aula (07:30–08:20). O dia vai de `2`
+(segunda) a `7` (sábado) — domingo não existe na grade, então nenhuma sala
+funciona nele. Os horários são obrigatórios no cadastro.
+
+Ler uma sala **com uma data** devolve a agenda daquele dia: um horário por
+linha, livre ou ocupada, e quem reservou. É o que o item (e) da EP-2 pede.
+Enquanto as reservas não existirem (EP-3), todos os horários aparecem livres —
+a estrutura já é a definitiva.
 
 No cliente, a aba **Usuários** só existe enquanto a sessão for de
 administrador, e o mesmo vale para o grupo de administração dentro da aba
@@ -163,7 +166,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 427 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 463 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as quinze
 operações já implementadas, a construção das telas, e a tela do cliente
@@ -234,7 +237,8 @@ Ele existe porque todo cadastro feito por `register` nasce com perfil `user`, e
 sem um administrador não haveria como exercitar as regras que dependem desse
 perfil. Para começar do zero, basta apagar a pasta `dados/`.
 
-As tabelas são `usuarios`, `sessoes`, `salas`, `sala_recursos` e `reservas`. Os
+As tabelas são `usuarios`, `sessoes`, `salas`, `sala_recursos`, `sala_slots` e
+`reservas`. Os
 recursos de cada sala ficam em tabela própria, uma linha por recurso, em vez de
 concatenados numa coluna: concatenar exigiria escolher um separador, e o
 protocolo não define formato para os itens de `resources` — qualquer separador
@@ -323,11 +327,11 @@ lib/               Bibliotecas, versionadas para o projeto rodar sem baixar nada
 
 A especificação é mantida pela turma e hoje vive em um documento AsyncAPI
 (`asyncapi.yaml`) no repositório `protocolo-reserva-salas`. Este código está em
-conformidade com a **versão 2.6**.
+conformidade com a **versão 2.8**.
 
 O arquivo `Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da
 planilha original (versão 2.0), em que a EP-1 foi escrita, e fica como
-histórico. As diferenças da 2.0 para a 2.6 que afetam a EP-1 são cinco: e-mail
+histórico. As diferenças da 2.0 para a 2.8 que afetam a EP-1 são cinco: e-mail
 aceita domínio de vários níveis; `delete_user` com senha errada responde 403
 "Senha incorreta" sem derrubar a sessão; alterar usuário sem mudar nada responde
 400 "Nenhum dado para atualizar"; o login checa e cria a sessão na mesma seção

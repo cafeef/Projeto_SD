@@ -37,6 +37,13 @@ final class SalaJson {
         // Array vazio quando nao houver recurso -- nunca ausente, nunca null.
         item.add("resources", recursos);
 
+        JsonArray slots = new JsonArray();
+        for (String slot : sala.getSlots()) {
+            slots.add(slot);
+        }
+        // Obrigatorio no read_room e em cada item de 'rooms' (regra 8.2).
+        item.add("slots", slots);
+
         item.addProperty("room_status", sala.getEstado());
         if (disponivel != null) {
             item.addProperty("available", disponivel ? "true" : "false");

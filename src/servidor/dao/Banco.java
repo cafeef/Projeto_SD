@@ -207,6 +207,21 @@ public final class Banco {
                     )
                     """);
 
+            // Um horario por linha, como os recursos. A chave primaria composta
+            // ja entrega a regra 8.2 -- horario repetido nao entra duas vezes.
+            // A ordem NAO e guardada: ela e a da tabela da UTFPR, e sai pronta
+            // de Horarios.ordenar(), entao gravar uma ordem aqui so criaria
+            // uma segunda fonte de verdade para discordar da primeira.
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS sala_slots (
+                        sala_id INT        NOT NULL,
+                        slot    VARCHAR(4) NOT NULL,
+                        PRIMARY KEY (sala_id, slot),
+                        CONSTRAINT fk_slot_sala FOREIGN KEY (sala_id)
+                            REFERENCES salas(id) ON DELETE CASCADE
+                    )
+                    """);
+
             // As reservas sao a EP-3, mas a tabela nasce aqui porque a EP-2 ja
             // depende dela em dois pontos: o campo 'available' do list_rooms e o
             // 409 "Sala possui reservas ativas" do delete_room. Sem a tabela,

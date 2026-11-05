@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
+import protocolo.Horarios;
 import ui.Estilo;
 
 import javax.swing.Box;
@@ -47,7 +48,7 @@ final class PainelSalas extends JPanel {
 
     // As colunas seguem a ordem em que o protocolo descreve o objeto Sala.
     private final JTable tabela = Estilo.tabela("ID", "Nome", "Capacidade", "Local",
-            "Recursos", "Estado", "Disponível");
+            "Recursos", "Horários", "Estado", "Disponível");
     private final JButton botaoDetalhes = new JButton("Ver detalhes da sala");
 
     // --- formulario de administracao ---
@@ -56,6 +57,7 @@ final class PainelSalas extends JPanel {
     private final JTextField salaCapacidade = estreito(new JTextField(4));
     private final JTextField salaLocal = estreito(new JTextField(22));
     private final JTextField salaRecursos = estreito(new JTextField(26));
+    private final JTextField salaHorarios = estreito(new JTextField(26));
     private final JComboBox<String> salaEstado = new JComboBox<>(new String[] {"active", "inactive"});
     private final JButton botaoCadastrar = Estilo.botaoPrincipal("Cadastrar nova sala");
     private final JButton botaoSalvar = new JButton("Salvar na sala selecionada");
@@ -114,7 +116,12 @@ final class PainelSalas extends JPanel {
                 .campo("Nome:", linha(salaNome, rotulo("Capacidade:"), salaCapacidade))
                 .campo("Local:", linha(salaLocal, rotulo("Estado:"), salaEstado))
                 .campo("Recursos:", salaRecursos)
+                .campo("Horários:", salaHorarios)
                 .linhaCheia(botoesAdmin)
+                .dica("Horários no código da UTFPR, separados por vírgula:"
+                        + " 2M1 = segunda, manhã, 1ª aula.")
+                .dica("Dia 2 a 7 (segunda a sábado) · turno M, T ou N ·"
+                        + " aula 1 a 6 (M e T) ou 1 a 5 (N).")
                 .dica("Recursos separados por vírgula.")
                 .dica("Nome: letras, números, espaço e hífen, até 30 caracteres.")
                 .dica("Clique numa sala da tabela para carregá-la aqui.");
@@ -243,7 +250,8 @@ final class PainelSalas extends JPanel {
                     campo(sala, "name"),
                     campo(sala, "capacity"),
                     campo(sala, "location"),
-                    recursosParaTexto(sala),
+                    listaParaTexto(sala, "resources"),
+                    listaParaTexto(sala, "slots"),
                     "active".equals(campo(sala, "room_status")) ? "ativa" : "inativa",
                     disponibilidade(campo(sala, "available"))});
         }
@@ -262,27 +270,42 @@ final class PainelSalas extends JPanel {
         JsonObject req = Canal.requisicao("read_room");
         req.addProperty("token", canal.token());
         req.addProperty("room_id", id);
+        // Com data, o servidor devolve a AGENDA do dia (regra 8.5): quem
+        // reservou cada horário e o que está livre. É o que o item (e) da
+        // Entrega 2 pede. Sem data, vêm só os dados da sala.
+        String data = filtroData.getText().trim();
+        if (!data.isEmpty()) {
+            req.addProperty("date", data);
+        }
 
         canal.trocar(req, resposta -> {
             if (!"200".equals(campo(resposta, "status"))) {
                 canal.informar(resposta);
                 return;
             }
-            String texto = "Sala " + campo(resposta, "room_id") + "\n\n"
-                    + "Nome: " + campo(resposta, "name") + "\n"
-                    + "Capacidade: " + campo(resposta, "capacity") + " lugares\n"
-                    + "Local: " + campo(resposta, "location") + "\n"
-                    + "Recursos: " + recursosParaTexto(resposta) + "\n"
-                    + "Estado: " + ("active".equals(campo(resposta, "room_status"))
-                            ? "ativa" : "inativa (não aceita novas reservas)");
-            JOptionPane.showMessageDialog(this, texto, "Detalhes da sala",
+            StringBuilder texto = new StringBuilder("Sala ")
+                    .append(campo(resposta, "room_id")).append("\n\n")
+                    .append("Nome: ").append(campo(resposta, "name")).append('\n')
+                    .append("Capacidade: ").append(campo(resposta, "capacity"))
+                    .append(" lugares\n")
+                    .append("Local: ").append(campo(resposta, "location")).append('\n')
+                    .append("Recursos: ").append(recursosParaTexto(resposta)).append('\n')
+                    .append("Estado: ")
+                    .append("active".equals(campo(resposta, "room_status"))
+                            ? "ativa" : "inativa (não aceita novas reservas)")
+                    .append('\n')
+                    .append("Funciona em: ").append(horariosPorExtenso(resposta));
+
+            texto.append(agendaPorExtenso(resposta));
+            JOptionPane.showMessageDialog(this, texto.toString(), "Detalhes da sala",
                     JOptionPane.INFORMATION_MESSAGE);
         });
     }
 
     private void cadastrar() {
         JsonObject req = requisicaoDeCadastro(canal.token(), salaNome.getText(),
-                salaCapacidade.getText(), salaLocal.getText(), salaRecursos.getText());
+                salaCapacidade.getText(), salaLocal.getText(), salaRecursos.getText(),
+                salaHorarios.getText());
 
         canal.trocar(req, resposta -> {
             canal.informar(resposta);
@@ -301,7 +324,7 @@ final class PainelSalas extends JPanel {
 
         JsonObject req = requisicaoDeAlteracao(canal.token(), id, salaNome.getText(),
                 salaCapacidade.getText(), salaLocal.getText(), salaRecursos.getText(),
-                (String) salaEstado.getSelectedItem());
+                (String) salaEstado.getSelectedItem(), salaHorarios.getText());
 
         canal.trocar(req, resposta -> {
             canal.informar(resposta);
@@ -343,6 +366,55 @@ final class PainelSalas extends JPanel {
 
     // ------------------------------------------------------------------ apoio
 
+    /** Os horários de funcionamento, legíveis: "2M1 (segunda, 07:30-08:20)". */
+    private static String horariosPorExtenso(JsonObject resposta) {
+        if (!resposta.has("slots") || !resposta.get("slots").isJsonArray()) {
+            return "(não informado)";
+        }
+        List<String> linhas = new ArrayList<>();
+        for (JsonElement e : resposta.getAsJsonArray("slots")) {
+            String slot = e.getAsString();
+            linhas.add(slot + " (" + Horarios.porExtenso(slot) + ")");
+        }
+        return linhas.isEmpty() ? "(nenhum)" : "\n  " + String.join("\n  ", linhas);
+    }
+
+    /**
+     * A agenda do dia, quando a resposta trouxe uma.
+     *
+     * É aqui que aparece QUEM reservou e EM QUE horário -- o item (e) da
+     * Entrega 2. Agenda vazia não é falha: quer dizer que a sala não funciona
+     * naquele dia da semana.
+     */
+    private static String agendaPorExtenso(JsonObject resposta) {
+        if (!resposta.has("agenda") || !resposta.get("agenda").isJsonArray()) {
+            return "\n\nInforme uma data nos filtros para ver a agenda do dia.";
+        }
+        var agenda = resposta.getAsJsonArray("agenda");
+        if (agenda.size() == 0) {
+            return "\n\nAgenda de " + campo(resposta, "date")
+                    + ": a sala não funciona nesse dia.";
+        }
+        StringBuilder sb = new StringBuilder("\n\nAgenda de ")
+                .append(campo(resposta, "date")).append(":");
+        for (JsonElement e : agenda) {
+            JsonObject h = e.getAsJsonObject();
+            sb.append("\n  ").append(campo(h, "slot")).append("  ")
+                    .append(campo(h, "start_time")).append('-').append(campo(h, "end_time"))
+                    .append("  ")
+                    .append("livre".equals(campo(h, "slot_status")) ? "livre" : "ocupada");
+            String dono = campo(h, "user");
+            if (dono != null) {
+                sb.append(" — reservada por ").append(dono);
+                String reserva = campo(h, "reservation_id");
+                if (reserva != null) {
+                    sb.append(" (reserva ").append(reserva).append(')');
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     /** Carrega a sala selecionada no formulario de administracao. */
     private void carregarSelecionada() {
         int linha = tabela.getSelectedRow();
@@ -354,7 +426,8 @@ final class PainelSalas extends JPanel {
         salaCapacidade.setText(texto(modelo.getValueAt(linha, 2)));
         salaLocal.setText(texto(modelo.getValueAt(linha, 3)));
         salaRecursos.setText(texto(modelo.getValueAt(linha, 4)));
-        salaEstado.setSelectedItem("ativa".equals(texto(modelo.getValueAt(linha, 5)))
+        salaHorarios.setText(texto(modelo.getValueAt(linha, 5)));
+        salaEstado.setSelectedItem("ativa".equals(texto(modelo.getValueAt(linha, 6)))
                 ? "active" : "inactive");
     }
 
@@ -363,6 +436,7 @@ final class PainelSalas extends JPanel {
         salaCapacidade.setText("");
         salaLocal.setText("");
         salaRecursos.setText("");
+        salaHorarios.setText("");
         salaEstado.setSelectedItem("active");
     }
 
@@ -409,13 +483,16 @@ final class PainelSalas extends JPanel {
      * o campo nem e lido no create_room.
      */
     static JsonObject requisicaoDeCadastro(String token, String nome, String capacidade,
-                                           String local, String recursos) {
+                                           String local, String recursos, String horarios) {
         JsonObject req = Canal.requisicao("create_room");
         req.addProperty("token", token);
         req.addProperty("name", nome.trim());
         req.addProperty("capacity", capacidade.trim());
         req.addProperty("location", local.trim());
         req.add("resources", recursosDeTexto(recursos));
+        // Obrigatorio (regra 8.2). Vai em MAIUSCULA porque o codigo da grade e
+        // maiusculo e digitar "2m1" e esperar que funcione e razoavel.
+        req.add("slots", slotsDeTexto(horarios));
         return req;
     }
 
@@ -429,7 +506,7 @@ final class PainelSalas extends JPanel {
      */
     static JsonObject requisicaoDeAlteracao(String token, String roomId, String nome,
                                             String capacidade, String local, String recursos,
-                                            String estado) {
+                                            String estado, String horarios) {
         JsonObject req = Canal.requisicao("update_room");
         req.addProperty("token", token);
         req.addProperty("room_id", roomId);
@@ -438,7 +515,28 @@ final class PainelSalas extends JPanel {
         req.addProperty("location", local.trim());
         req.add("resources", recursosDeTexto(recursos));
         req.addProperty("room_status", estado);
+        // Regra 8.7: lista vazia mantem os horarios atuais, entao o campo em
+        // branco nao apaga nada -- ao contrario do 'resources'.
+        req.add("slots", slotsDeTexto(horarios));
         return req;
+    }
+
+    /**
+     * O campo de horarios, de "2m1, 3T1" para ["2M1","3T1"].
+     *
+     * Maiusculiza porque o codigo da grade e maiusculo e ninguem deveria ser
+     * punido por digitar "2m1" -- o servidor recusaria com 400, e o erro seria
+     * do teclado, nao da intencao.
+     */
+    static JsonArray slotsDeTexto(String texto) {
+        JsonArray lista = new JsonArray();
+        for (String parte : texto.split(",")) {
+            String limpo = parte.trim().toUpperCase();
+            if (!limpo.isEmpty()) {
+                lista.add(limpo);
+            }
+        }
+        return lista;
     }
 
     /** O campo de recursos, de "projetor, tv" para ["projetor","tv"]. */
@@ -455,16 +553,21 @@ final class PainelSalas extends JPanel {
         return lista;
     }
 
-    /** O array 'resources' de uma resposta, de volta para "projetor, tv". */
-    static String recursosParaTexto(JsonObject objeto) {
-        if (!objeto.has("resources") || !objeto.get("resources").isJsonArray()) {
+    /** Um array de strings da resposta, de volta para "a, b, c". */
+    static String listaParaTexto(JsonObject objeto, String chave) {
+        if (!objeto.has(chave) || !objeto.get(chave).isJsonArray()) {
             return "";
         }
         List<String> itens = new ArrayList<>();
-        for (JsonElement elemento : objeto.getAsJsonArray("resources")) {
+        for (JsonElement elemento : objeto.getAsJsonArray(chave)) {
             itens.add(elemento.getAsString());
         }
         return String.join(", ", itens);
+    }
+
+    /** O array 'resources' de uma resposta, de volta para "projetor, tv". */
+    static String recursosParaTexto(JsonObject objeto) {
+        return listaParaTexto(objeto, "resources");
     }
 
     /**

@@ -16,6 +16,12 @@ import java.util.List;
  * O 'room_id' identifica a sala e nunca muda. Os outros campos seguem a regra
  * 2.11: "" mantem o valor atual.
  *
+ * O 'slots' e o contrario do 'resources' em dois pontos: e opcional, e a lista
+ * vazia significa "nao alterar" (regra 8.7). Faz sentido, porque a lista vazia
+ * nao e um estado valido de sala -- uma sala sem horario nenhum nao receberia
+ * reserva --, entao o vazio fica livre para significar outra coisa. Mudar os
+ * horarios nao apaga as reservas ja feitas.
+ *
  * O 'resources' e a excecao, e e excecao de proposito: ele vem como lista
  * COMPLETA, entao [] quer dizer "sala sem recurso nenhum", e nao "nao alterar".
  * Nao ha como pedir "mantenha os recursos" -- a requisicao sempre reescreve a
@@ -46,6 +52,7 @@ public class UpdateRoomHandler extends HandlerAdmin {
         String localizacao;
         String estado;
         List<String> recursos;
+        List<String> slots;
         try {
             roomId = Validador.obrigatorio(requisicao, "room_id");
             nome = Validador.opcionalAtualizacao(requisicao, "name");
@@ -53,6 +60,12 @@ public class UpdateRoomHandler extends HandlerAdmin {
             localizacao = Validador.opcionalAtualizacao(requisicao, "location");
             estado = Validador.opcionalAtualizacao(requisicao, "room_status");
             recursos = Validador.listaDeTextos(requisicao, "resources");
+            // Regra 8.7: aqui o 'slots' e opcional, e a lista VAZIA quer dizer
+            // "nao alterar" -- diferente do 'resources', que nao tem como
+            // dizer isso e por isso e sempre substituido.
+            slots = requisicao.has("slots")
+                    ? Validador.listaDeSlots(requisicao, false)
+                    : List.of();
         } catch (CampoInvalidoException e) {
             return erro400();
         }
@@ -76,7 +89,7 @@ public class UpdateRoomHandler extends HandlerAdmin {
         try {
             if (!SalaDAO.atualizar(id, nome,
                     capacidade == null ? null : Integer.valueOf(capacidade),
-                    localizacao, recursos, estado)) {
+                    localizacao, recursos, estado, slots)) {
                 // A sala existia no SELECT acima e sumiu antes do UPDATE: outro
                 // administrador a removeu no meio. O 404 e a resposta honesta.
                 return resposta("404", "Sala nao encontrada");
