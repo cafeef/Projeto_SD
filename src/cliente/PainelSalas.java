@@ -402,7 +402,7 @@ final class PainelSalas extends JPanel {
             sb.append("\n  ").append(campo(h, "slot")).append("  ")
                     .append(campo(h, "start_time")).append('-').append(campo(h, "end_time"))
                     .append("  ")
-                    .append("livre".equals(campo(h, "slot_status")) ? "livre" : "ocupada");
+                    .append("livre".equals(campo(h, "slot_status")) ? "livre" : "indisponível");
             String dono = campo(h, "user");
             if (dono != null) {
                 sb.append(" — reservada por ").append(dono);
@@ -575,13 +575,19 @@ final class PainelSalas extends JPanel {
      *
      * O travessao e para a ausencia do campo: sem o trio de horario o servidor
      * omite 'available', e "—" diz "nao perguntamos" em vez de insinuar que a
-     * sala esta ocupada.
+     * sala esta indisponivel.
+     *
+     * "Indisponivel", e nao "ocupada": o protocolo manda um booleano, sem
+     * dizer o motivo, e os motivos sao tres -- sala inactive, horario fora do
+     * funcionamento dela (regra 8.4) e reserva de alguem. So o terceiro e
+     * "ocupada". A agenda do read_room e quem separa os casos, mostrando quem
+     * reservou quando existe reserva.
      */
     static String disponibilidade(String available) {
         if (available == null) {
             return "—";
         }
-        return "true".equals(available) ? "livre" : "ocupada";
+        return "true".equals(available) ? "livre" : "indisponível";
     }
 
     private static void acrescentarSeInformado(JsonObject req, String chave, String valor) {

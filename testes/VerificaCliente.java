@@ -172,13 +172,17 @@ public class VerificaCliente {
                 "".equals(PainelSalas.recursosParaTexto(new JsonObject())));
 
         // O 'available' so vem com o trio de horario; sem ele, a tabela nao
-        // pode insinuar que a sala esta ocupada.
+        // pode insinuar que a sala esta indisponivel.
         confere("available ausente aparece como travessao",
                 "—".equals(PainelSalas.disponibilidade(null)));
         confere("available \"true\" aparece como livre",
                 "livre".equals(PainelSalas.disponibilidade("true")));
-        confere("available \"false\" aparece como ocupada",
-                "ocupada".equals(PainelSalas.disponibilidade("false")));
+        // "Indisponivel" e nao "ocupada": o false do protocolo cobre sala
+        // inactive e horario fora do funcionamento, e nao so reserva.
+        confere("available \"false\" aparece como indisponivel",
+                "indisponível".equals(PainelSalas.disponibilidade("false")));
+        confere("a tabela nao chama de ocupada o que nao tem reserva",
+                !"ocupada".equals(PainelSalas.disponibilidade("false")));
     }
 
     // ----------------------------------------------------------------- admin

@@ -212,7 +212,7 @@ public class VerificaTelaDoCliente {
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Listar salas"));
-        confere("e) com data e horario, mostra livre ou ocupada",
+        confere("e) com data e horario, mostra livre ou indisponivel",
                 esperar(() -> textoDaTabela(tabelaSalas).contains("livre")));
 
         // Seleciona pelo NOME, e nao pela primeira linha: o servidor desta
