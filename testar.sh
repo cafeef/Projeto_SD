@@ -27,6 +27,10 @@ echo "### Mensagens exibidas na tela (sem rede)"
 java -cp "bin-testes:bin:$CP_LIB" cliente.VerificaMensagens
 echo
 
+echo "### Requisicoes montadas pelo cliente (sem rede)"
+java -cp "bin-testes:bin:$CP_LIB" cliente.VerificaCliente
+echo
+
 echo "### Banco de dados (H2 em memoria)"
 java -cp "bin-testes:bin:$CP_LIB" VerificaBanco
 echo

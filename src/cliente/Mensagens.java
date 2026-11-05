@@ -43,6 +43,22 @@ final class Mensagens {
             Map.entry("Usuario removido com sucesso", "Usuário removido com sucesso."),
             Map.entry("Nao e possivel remover o ultimo administrador",
                     "Não é possível remover o último administrador."),
+            Map.entry("Senha incorreta", "Senha incorreta."),
+            // operacoes de administrador (EP-2)
+            Map.entry("Permissao insuficiente",
+                    "Esta operação é restrita a administradores."),
+            Map.entry("Usuario nao encontrado", "Usuário não encontrado."),
+            Map.entry("Nenhum dado para atualizar", "Nenhum dado para atualizar."),
+            // salas (EP-2)
+            Map.entry("Sala cadastrada com sucesso", "Sala cadastrada com sucesso."),
+            Map.entry("Dados da sala em formato invalido",
+                    "Dados da sala em formato inválido."),
+            Map.entry("Sala ja cadastrada", "Já existe uma sala com esse nome."),
+            Map.entry("Filtros em formato invalido", "Filtros em formato inválido."),
+            Map.entry("Sala nao encontrada", "Sala não encontrada."),
+            Map.entry("Sala atualizada com sucesso", "Sala atualizada com sucesso."),
+            Map.entry("Sala removida com sucesso", "Sala removida com sucesso."),
+            Map.entry("Sala possui reservas ativas", "Esta sala possui reservas ativas."),
             // erros de protocolo (secao 4)
             Map.entry("Requisicao invalida", "Requisição inválida."),
             Map.entry("Operacao desconhecida", "Operação desconhecida."),
@@ -66,6 +82,19 @@ final class Mensagens {
         }
         if ("401".equals(status) && "delete_user_response".equals(op)) {
             return "Confira a senha digitada.";
+        }
+        if ("403".equals(status) && "delete_user_response".equals(op)) {
+            return "Confira a senha digitada. Sua sessão continua ativa.";
+        }
+        if ("409".equals(status) && "delete_room_response".equals(op)) {
+            return "Para tirá-la de circulação sem apagar as reservas,"
+                    + " altere o estado da sala para \"inactive\".";
+        }
+        if ("400".equals(status) && "list_rooms_response".equals(op)) {
+            return "Data, início e fim precisam ser informados juntos, ou nenhum dos três.";
+        }
+        if ("403".equals(status) && op != null && op.startsWith("admin_")) {
+            return "Seu perfil pode ter sido alterado. Recarregue seus dados.";
         }
         return null;
     }

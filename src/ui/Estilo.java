@@ -1,13 +1,20 @@
 package ui;
 
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTable;
+import javax.swing.ListSelectionModel;
 import javax.swing.border.Border;
+import javax.swing.table.DefaultTableModel;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 
 /**
  * Elementos visuais compartilhados pelas telas do cliente e do servidor.
@@ -80,6 +87,99 @@ public final class Estilo {
         JButton b = new JButton(texto);
         b.setForeground(VERMELHO);
         return b;
+    }
+
+    /**
+     * Formulario de linhas "rotulo: campo", montado sobre GridBagLayout.
+     *
+     * Existe porque as telas de salas e de usuarios repetem o mesmo arranjo
+     * varias vezes, e porque o GridBagLayout exige um detalhe facil de esquecer:
+     * sem uma terceira coluna que absorva a largura sobrando, ele centraliza os
+     * campos no painel e a tela fica com tudo boiando no meio.
+     */
+    public static final class Grade {
+
+        private final JPanel painel;
+        private final GridBagConstraints g = new GridBagConstraints();
+        private int linha;
+
+        public Grade(JPanel painel) {
+            this.painel = painel;
+            painel.setLayout(new GridBagLayout());
+            g.insets = new Insets(5, 6, 5, 6);
+            g.anchor = GridBagConstraints.WEST;
+        }
+
+        /** Uma linha com rotulo a esquerda e componente a direita. */
+        public Grade campo(String rotulo, Component entrada) {
+            g.gridy = linha++;
+            g.gridx = 0;
+            g.weightx = 0;
+            g.gridwidth = 1;
+            g.fill = GridBagConstraints.NONE;
+            painel.add(new JLabel(rotulo), g);
+
+            g.gridx = 1;
+            painel.add(entrada, g);
+
+            g.gridx = 2;
+            g.weightx = 1.0;
+            g.fill = GridBagConstraints.HORIZONTAL;
+            painel.add(Box.createHorizontalGlue(), g);
+
+            g.weightx = 0;
+            g.fill = GridBagConstraints.NONE;
+            return this;
+        }
+
+        /** Uma linha ocupando as tres colunas -- botoes, dicas, separadores. */
+        public Grade linhaCheia(Component componente) {
+            g.gridy = linha++;
+            g.gridx = 0;
+            g.gridwidth = 3;
+            g.weightx = 1.0;
+            g.fill = GridBagConstraints.HORIZONTAL;
+            painel.add(componente, g);
+
+            g.gridwidth = 1;
+            g.weightx = 0;
+            g.fill = GridBagConstraints.NONE;
+            return this;
+        }
+
+        /** Uma dica em letra miuda, logo abaixo dos campos. */
+        public Grade dica(String texto) {
+            return linhaCheia(rodape(texto));
+        }
+    }
+
+    /**
+     * Tabela somente de leitura, de linha unica selecionavel.
+     *
+     * As listagens do protocolo sao consultas: a edicao acontece pelas
+     * operacoes de alteracao, nunca digitando na celula. Uma celula editavel
+     * daria a impressao de que o valor foi gravado quando nada foi enviado.
+     */
+    public static JTable tabela(String... colunas) {
+        DefaultTableModel modelo = new DefaultTableModel(colunas, 0) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public boolean isCellEditable(int linha, int coluna) {
+                return false;
+            }
+        };
+        JTable t = new JTable(modelo);
+        t.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        t.setRowHeight(t.getRowHeight() + 6);
+        t.getTableHeader().setReorderingAllowed(false);
+        t.setFillsViewportHeight(true);
+        return t;
+    }
+
+    /** O modelo de uma tabela criada por {@link #tabela(String...)}. */
+    public static DefaultTableModel modeloDe(JTable tabela) {
+        return (DefaultTableModel) tabela.getModel();
     }
 
     public static Border margem() {

@@ -15,6 +15,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
+import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
@@ -26,6 +27,7 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Toolkit;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
@@ -44,8 +46,15 @@ import java.util.function.Consumer;
  * Duas telas, trocadas por CardLayout:
  *
  *   ACESSO  -- abas de entrar (login) e cadastrar (register)
- *   SESSÃO  -- meus dados (read_user), alterar (update_user),
- *              excluir (delete_user) e sair (logout)
+ *   SESSÃO  -- abas de meu cadastro (read_user, update_user, delete_user),
+ *              salas (as cinco operações de sala) e usuários (as quatro
+ *              operações admin_*), mais o botão de sair (logout)
+ *
+ * A aba de usuários só existe na tela enquanto a sessão for de administrador, e
+ * o grupo de administração de salas aparece sob a mesma condição. Isso é
+ * conveniência de interface, não segurança: o servidor confere a whitelist de
+ * tokens (regra 3.14) a cada requisição, e esconder um botão apenas evita
+ * oferecer uma ação que responderia 403.
  *
  * O token fica só em memória (regra 3.2) e é descartado em todo 401, que é a
  * reação que a aba "Codigos de Status" manda ter.
@@ -101,6 +110,53 @@ public final class ClienteGUI extends JFrame {
     private final CardLayout cartas = new CardLayout();
     private final JPanel painelCartas = new JPanel(cartas);
     private final JTabbedPane abasAcesso = new JTabbedPane();
+    private final JTabbedPane abasSessao = new JTabbedPane();
+
+    /**
+     * O que os painéis de salas e de usuários usam para falar com o servidor.
+     *
+     * Uma classe anônima, e não a própria ClienteGUI implementando Canal: assim
+     * 'informar', 'erro' e 'trocar' continuam privados aqui dentro, em vez de
+     * virarem métodos públicos de uma janela só porque uma interface os exige.
+     */
+    private final transient Canal canal = new Canal() {
+
+        @Override
+        public void trocar(JsonObject requisicao, Consumer<JsonObject> aoResponder) {
+            ClienteGUI.this.trocar(requisicao, aoResponder);
+        }
+
+        @Override
+        public String token() {
+            return token;
+        }
+
+        @Override
+        public boolean ehAdmin() {
+            return ehAdmin;
+        }
+
+        @Override
+        public void informar(JsonObject resposta) {
+            ClienteGUI.this.informar(resposta);
+        }
+
+        @Override
+        public void erro(String mensagem) {
+            ClienteGUI.this.erro(mensagem);
+        }
+
+        @Override
+        public void relerCadastro() {
+            lerCadastro();
+        }
+    };
+
+    private final PainelSalas painelSalas = new PainelSalas(canal);
+    private final PainelUsuarios painelUsuarios = new PainelUsuarios(canal);
+
+    /** A aba de usuários, guardada para poder entrar e sair da tela. */
+    private Component abaUsuarios;
 
     private final transient Conexao conexao = new Conexao();
     private final transient ExecutorService rede = Executors.newSingleThreadExecutor(r -> {
@@ -111,6 +167,12 @@ public final class ClienteGUI extends JFrame {
 
     /** Token da sessão. Vive só aqui, em memória (regra 3.2). */
     private transient String token;
+
+    /**
+     * Se a sessão atual é de administrador, conforme o 'role' que o login e o
+     * read_user devolvem. Usado só para montar a tela.
+     */
+    private transient boolean ehAdmin;
 
     public ClienteGUI() {
         super("Cliente - Reserva de Salas");
@@ -130,12 +192,18 @@ public final class ClienteGUI extends JFrame {
             }
         });
 
-        // pack() dimensiona pelo que o conteudo pede, em vez de um tamanho
-        // fixo que pode cortar botoes quando a fonte do sistema e maior. O
-        // CardLayout ja considera o maior dos dois cartoes.
-        pack();
-        setSize(Math.max(getWidth(), 700), Math.max(getHeight(), 640));
-        setMinimumSize(getSize());
+        // Tamanho inicial confortavel, mas nunca maior do que a tela: num
+        // notebook de 1366x768 uma janela de 1100 de altura nasceria com o
+        // rodape fora do monitor, sem jeito de alcanca-lo.
+        //
+        // Aqui NAO se usa pack() com setMinimumSize(getSize()), que era o que
+        // esta tela fazia antes: com as abas de salas e usuarios o conteudo
+        // passou de 1100 pixels de altura, e o minimo viraria esse valor --
+        // travando a janela num tamanho que muitas telas nao comportam. Como
+        // cada aba agora rola, uma janela menor continua utilizavel.
+        Dimension tela = Toolkit.getDefaultToolkit().getScreenSize();
+        setSize(Math.min(960, tela.width - 80), Math.min(820, tela.height - 80));
+        setMinimumSize(new Dimension(720, 520));
         setLocationRelativeTo(null);
     }
 
@@ -179,7 +247,7 @@ public final class ClienteGUI extends JFrame {
         abasAcesso.addTab("  Cadastrar  ", painelCadastro());
 
         painelCartas.add(abasAcesso, CARTAO_ACESSO);
-        painelCartas.add(painelSessao(), CARTAO_SESSAO);
+        painelCartas.add(montarAbasDaSessao(), CARTAO_SESSAO);
         cartas.show(painelCartas, CARTAO_ACESSO);
 
         JLabel rodape = Estilo.rodape(
@@ -230,7 +298,74 @@ public final class ClienteGUI extends JFrame {
         return envolver(p);
     }
 
-    private JPanel painelSessao() {
+    /**
+     * As abas da sessão. A de usuários é montada aqui mas só entra na tela
+     * quando a sessão é de administrador -- ver {@link #aplicarPerfil()}.
+     */
+    private JPanel montarAbasDaSessao() {
+        abaUsuarios = comMargem(painelUsuarios);
+
+        abasSessao.addTab("  Meu cadastro  ", comMargem(painelMeuCadastro()));
+        abasSessao.addTab("  Salas  ", comMargem(painelSalas));
+
+        // O logout fica FORA das abas, embaixo delas. Ele encerra a sessão
+        // inteira, não o que está na aba aberta, e dentro de uma aba rolável
+        // ele some de vista exatamente quando a tela está cheia -- que é
+        // quando mais se quer sair.
+        JPanel saida = new JPanel();
+        saida.setLayout(new BoxLayout(saida, BoxLayout.X_AXIS));
+        saida.add(botaoSair);
+        saida.add(Box.createHorizontalGlue());
+
+        JPanel p = new JPanel(new BorderLayout(0, 10));
+        p.add(abasSessao, BorderLayout.CENTER);
+        p.add(saida, BorderLayout.SOUTH);
+        return p;
+    }
+
+    /**
+     * Respiro interno e rolagem para o conteúdo de uma aba.
+     *
+     * A rolagem não é enfeite: numa janela pequena, ou com a fonte do sistema
+     * maior, a aba de salas pede mais altura do que a janela tem. Sem o
+     * JScrollPane o layout simplesmente espreme o que estiver por último, e
+     * botões como "Sair" ou a própria tabela de salas desaparecem sem aviso --
+     * foi o que aconteceu antes desta mudança. Com ele, o que não cabe fica
+     * acessível rolando.
+     */
+    private JScrollPane comMargem(Component interno) {
+        JPanel fora = new JPanel(new BorderLayout());
+        fora.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
+        fora.add(interno, BorderLayout.CENTER);
+
+        JScrollPane rolagem = new JScrollPane(fora);
+        rolagem.setBorder(BorderFactory.createEmptyBorder());
+        rolagem.getVerticalScrollBar().setUnitIncrement(16);
+        // A barra horizontal aparece só quando precisa. Proibi-la pareceria
+        // mais limpo, mas forçaria o conteúdo na largura da janela, e aí o
+        // layout voltaria a encolher os campos até o tamanho mínimo deles.
+        rolagem.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        return rolagem;
+    }
+
+    /**
+     * Mostra ou esconde o que é exclusivo de administrador.
+     *
+     * A aba de usuários é retirada da tela, e não apenas desabilitada: uma aba
+     * cinza sugere "clique de novo mais tarde", quando o que aconteceu é que o
+     * perfil desta sessão não tem mais essas operações.
+     */
+    private void aplicarPerfil() {
+        painelSalas.aplicarPerfil();
+        int indice = abasSessao.indexOfComponent(abaUsuarios);
+        if (ehAdmin && indice < 0) {
+            abasSessao.addTab("  Usuários  ", abaUsuarios);
+        } else if (!ehAdmin && indice >= 0) {
+            abasSessao.remove(indice);
+        }
+    }
+
+    private JPanel painelMeuCadastro() {
         JPanel dados = Estilo.grupo("Meus dados");
         dados.setLayout(new GridBagLayout());
         GridBagConstraints g = grade();
@@ -260,7 +395,6 @@ public final class ClienteGUI extends JFrame {
 
         JPanel acoes = new JPanel();
         acoes.setLayout(new BoxLayout(acoes, BoxLayout.X_AXIS));
-        acoes.add(botaoSair);
         acoes.add(Box.createHorizontalGlue());
         acoes.add(botaoExcluir);
 
@@ -430,7 +564,12 @@ public final class ClienteGUI extends JFrame {
         trocar(req, resposta -> {
             if ("200".equals(campo(resposta, "status"))) {
                 token = campo(resposta, "token");
+                // O 'role' do login já monta a tela certa de saída; o
+                // read_user logo abaixo confirma.
+                ehAdmin = "admin".equals(campo(resposta, "role"));
+                aplicarPerfil();
                 loginSenha.setText("");
+                abasSessao.setSelectedIndex(0);
                 cartas.show(painelCartas, CARTAO_SESSAO);
                 lerCadastro();
             } else {
@@ -450,6 +589,10 @@ public final class ClienteGUI extends JFrame {
                 dadosPerfil.setText("admin".equals(campo(resposta, "role"))
                         ? "Administrador" : "Usuário comum");
                 dadosCriadoEm.setText(campo(resposta, "created_at"));
+                // Um admin pode ter sido rebaixado por outro enquanto estava
+                // logado: o perfil é relido a cada leitura, não só no login.
+                ehAdmin = "admin".equals(campo(resposta, "role"));
+                aplicarPerfil();
             } else {
                 informar(resposta);
             }
@@ -578,6 +721,10 @@ public final class ClienteGUI extends JFrame {
         dadosCriadoEm.setText("-");
         novoUsuario.setText("");
         novaSenha.setText("");
+        ehAdmin = false;
+        painelSalas.limpar();
+        painelUsuarios.limpar();
+        aplicarPerfil();
     }
 
     /**
@@ -617,6 +764,8 @@ public final class ClienteGUI extends JFrame {
         botaoSalvar.setEnabled(habilitado);
         botaoExcluir.setEnabled(habilitado);
         botaoSair.setEnabled(habilitado);
+        painelSalas.habilitar(habilitado);
+        painelUsuarios.habilitar(habilitado);
     }
 
     /**

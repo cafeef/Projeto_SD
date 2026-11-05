@@ -11,7 +11,7 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 | Entrega | Escopo | Situação |
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
-| EP-2 | Operações de administrador e CRUD de salas | 🔸 servidor completo; telas do cliente pendentes |
+| EP-2 | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
@@ -20,7 +20,7 @@ Operações implementadas, com todos os códigos de status previstos no protocol
   `delete_user`
 - **EP-2** — `admin_list_users`, `admin_read_user`, `admin_update_user`,
   `admin_delete_user`, `create_room`, `list_rooms`, `read_room`, `update_room`,
-  `delete_room` (servidor)
+  `delete_room`
 
 O poder de administrador sai de uma **whitelist de tokens** (regra 3.14), e não
 do perfil gravado no banco nem de qualquer campo da requisição. Um token entra
@@ -31,6 +31,11 @@ sem exigir login novo. Um `role` enviado pelo cliente é ignorado.
 Nas salas, **cadastrar, alterar e remover exigem administrador; ler e listar,
 não** (regra 3.7) — quem vai reservar precisa ver a sala. O `room_id` é gerado
 pelo servidor, nunca escolhido pelo cliente, e a sala nasce `active`.
+
+No cliente, a aba **Usuários** só existe enquanto a sessão for de
+administrador, e o mesmo vale para o grupo de administração dentro da aba
+**Salas**. Isso é conveniência de interface, não segurança: esconder um botão
+apenas evita oferecer uma ação que o servidor responderia com 403.
 
 ## Requisitos
 
@@ -134,15 +139,19 @@ O cliente de console aceita `register`, `login`, `read`, `update`, `delete`,
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 348 verificações em
-seis suítes: validação de campos, tradução das mensagens, banco de dados,
-transporte e erros de protocolo, as quinze operações já implementadas, e as
-telas mais a conexão do cliente. No fim, dispara três clientes simultâneos
-contra o mesmo servidor.
+Compila tudo, sobe um servidor com banco em memória e roda 401 verificações em
+sete suítes: validação de campos, tradução das mensagens, as requisições que o
+cliente monta, banco de dados, transporte e erros de protocolo, as quinze
+operações já implementadas, e as telas mais a conexão do cliente. No fim,
+dispara três clientes simultâneos contra o mesmo servidor.
 
 Os testes de transporte e de operações montam os bytes na mão, **sem usar as
 classes do projeto** — reproduzem a situação do teste de interoperabilidade, em
 que o outro lado não compartilha código nenhum com o nosso.
+
+A suíte do cliente confere o JSON que a interface **monta**, sem abrir janela:
+é esse JSON que o servidor de outro grupo vai receber, então uma chave
+obrigatória que falte aparece ali, e não na frente da turma.
 
 ### Testador oficial do protocolo
 
@@ -270,7 +279,8 @@ src/
 │   ├── dao/       Acesso ao H2: usuários, sessões e salas
 │   ├── modelo/    Entidades
 │   └── handlers/  Uma classe por operação do protocolo
-├── cliente/       Interface gráfica, modo console e conexão
+├── cliente/       Interface gráfica (abas de cadastro, salas e usuários),
+│                  modo console e conexão
 └── ui/            Elementos visuais comuns às duas telas
 
 testes/            Suítes executadas pelo testar.sh
