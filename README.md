@@ -11,7 +11,7 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 | Entrega | Escopo | Situação |
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
-| EP-2 | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
+| EP-2 | Operações de administrador e CRUD de salas | ✅ todas as operações do protocolo, servidor e cliente |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
@@ -31,6 +31,13 @@ sem exigir login novo. Um `role` enviado pelo cliente é ignorado.
 Nas salas, **cadastrar, alterar e remover exigem administrador; ler e listar,
 não** (regra 3.7) — quem vai reservar precisa ver a sala. O `room_id` é gerado
 pelo servidor, nunca escolhido pelo cliente, e a sala nasce `active`.
+
+O cadastro de sala segue o `create_room` do protocolo — `name`, `capacity`,
+`location` e `resources`. **Dias da semana e horários de funcionamento da sala
+ainda não existem no protocolo** (versão 2.6), e por isso não aparecem aqui;
+quando a turma fechar esses campos, eles entram na tabela `salas` e nos dois
+formulários. A agenda de quem reservou cada sala vem de `list_reservations`
+filtrando por `room_id`, que é operação da EP-3.
 
 No cliente, a aba **Usuários** só existe enquanto a sessão for de
 administrador, e o mesmo vale para o grupo de administração dentro da aba
