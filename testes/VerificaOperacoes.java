@@ -791,7 +791,19 @@ public class VerificaOperacoes {
                     adm.envia(reqSala("create_room", tokenAdmin, nomeSala, "10", "Bloco T", "")),
                     "create_room_response", "201", "Sala cadastrada com sucesso");
 
-            // Limpeza, para o banco de teste nao ficar com sobras.
+            // Limpeza, para o banco de teste nao ficar com sobras. A sala
+            // recriada logo acima tambem sai: o servidor desta suite e o mesmo
+            // que atende as outras verificacoes, e sala esquecida aqui vira
+            // linha inesperada na tabela da tela de la.
+            String idRecriada = campo(json(adm.envia(req("list_rooms", "token", tokenAdmin))),
+                    "count");
+            if (!"0".equals(idRecriada)) {
+                for (var item : json(adm.envia(req("list_rooms", "token", tokenAdmin)))
+                        .getAsJsonArray("rooms")) {
+                    adm.envia(req("delete_room", "token", tokenAdmin,
+                            "room_id", campo(item.getAsJsonObject(), "room_id")));
+                }
+            }
             adm.envia(req("delete_room", "token", tokenAdmin, "room_id", idOutra));
             adm.envia(req("logout", "token", tokenAdmin));
             c.envia(req("delete_user", "token", tokenComum, "password", "senha123"));

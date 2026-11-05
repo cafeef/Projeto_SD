@@ -205,7 +205,19 @@ final class PainelSalas extends JPanel {
         });
     }
 
+    /** Listagem pedida pelo usuario: avisa quando nao veio sala nenhuma. */
     private void listar() {
+        listar(true);
+    }
+
+    /**
+     * @param avisarSeVazio false nas recargas automaticas depois de cadastrar,
+     *        alterar ou remover. Sem isso, remover a ultima sala abre dois
+     *        avisos em sequencia -- "Sala removida com sucesso" e, logo atras,
+     *        "Nenhuma sala atende aos filtros", que soa como se algo tivesse
+     *        dado errado quando na verdade deu certo.
+     */
+    private void listar(boolean avisarSeVazio) {
         JsonObject req = requisicaoDeListagem(canal.token(), filtroData.getText(),
                 filtroInicio.getText(), filtroFim.getText(), filtroCapacidade.getText());
 
@@ -214,11 +226,11 @@ final class PainelSalas extends JPanel {
                 canal.informar(resposta);
                 return;
             }
-            preencherTabela(resposta);
+            preencherTabela(resposta, avisarSeVazio);
         });
     }
 
-    private void preencherTabela(JsonObject resposta) {
+    private void preencherTabela(JsonObject resposta, boolean avisarSeVazio) {
         var modelo = Estilo.modeloDe(tabela);
         modelo.setRowCount(0);
         JsonArray salas = resposta.has("rooms") && resposta.get("rooms").isJsonArray()
@@ -235,7 +247,7 @@ final class PainelSalas extends JPanel {
                     "active".equals(campo(sala, "room_status")) ? "ativa" : "inativa",
                     disponibilidade(campo(sala, "available"))});
         }
-        if (modelo.getRowCount() == 0) {
+        if (modelo.getRowCount() == 0 && avisarSeVazio) {
             JOptionPane.showMessageDialog(this,
                     "Nenhuma sala atende aos filtros informados.",
                     "Consulta de salas", JOptionPane.INFORMATION_MESSAGE);
@@ -276,7 +288,7 @@ final class PainelSalas extends JPanel {
             canal.informar(resposta);
             if ("201".equals(campo(resposta, "status"))) {
                 limparFormulario();
-                listar();
+                listar(false);
             }
         });
     }
@@ -294,7 +306,7 @@ final class PainelSalas extends JPanel {
         canal.trocar(req, resposta -> {
             canal.informar(resposta);
             if ("200".equals(campo(resposta, "status"))) {
-                listar();
+                listar(false);
             }
         });
     }
@@ -324,7 +336,7 @@ final class PainelSalas extends JPanel {
             canal.informar(resposta);
             if ("200".equals(campo(resposta, "status"))) {
                 limparFormulario();
-                listar();
+                listar(false);
             }
         });
     }

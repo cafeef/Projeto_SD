@@ -3,9 +3,9 @@
 #
 #   ./testar.sh [porta]     porta padrao: 45123 (so para os testes, sobe e cai sozinho)
 #
-# Testa o que ja existe: enquadramento das mensagens (Framing) e validacao de
-# campos (Validador). As operacoes do protocolo -- register, login, read_user,
-# update_user, delete_user, logout -- ainda NAO estao implementadas.
+# Sobe um servidor com banco EM MEMORIA numa porta so dos testes, roda todas as
+# suites contra ele e derruba no fim. O banco de verdade, em dados/, nao e
+# tocado.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,12 +36,34 @@ java -cp "bin-testes:bin:$CP_LIB" VerificaBanco
 echo
 
 echo "### Subindo o servidor na porta $PORTA"
+
+# Esperar a porta de uma rodada anterior ser liberada. Sem isto, duas execucoes
+# seguidas se atropelam: o servidor novo nao consegue o bind, e a espera abaixo
+# se daria por satisfeita com o servidor VELHO, que morre no meio da bateria.
+for _ in $(seq 1 40); do
+    (exec 3<>/dev/tcp/127.0.0.1/"$PORTA") 2>/dev/null || break
+    exec 3<&- 3>&-
+    sleep 0.25
+done
+if (exec 3<>/dev/tcp/127.0.0.1/"$PORTA") 2>/dev/null; then
+    exec 3<&- 3>&-
+    echo "ERRO: a porta $PORTA ja esta ocupada. Encerre o outro servidor,"
+    echo "      ou rode com outra porta: ./testar.sh <porta>"
+    exit 1
+fi
+
 java -cp "bin:$CP_LIB" servidor.ServidorConsole "$PORTA" --memoria > "$LOG" 2>&1 &
 SRV=$!
 trap 'kill "$SRV" 2>/dev/null || true' EXIT
 
 pronto=0
 for _ in $(seq 1 60); do
+    # 'kill -0' so pergunta se o processo existe; nao manda sinal nenhum. Sem
+    # esta checagem, um servidor que morreu ao subir deixaria a espera rodando
+    # os 15 segundos inteiros antes de acusar.
+    if ! kill -0 "$SRV" 2>/dev/null; then
+        echo "ERRO: o servidor morreu ao subir. Log:" ; cat "$LOG" ; exit 1
+    fi
     if (exec 3<>/dev/tcp/127.0.0.1/"$PORTA") 2>/dev/null; then
         exec 3<&- 3>&- ; pronto=1 ; break
     fi
@@ -62,6 +84,10 @@ echo
 
 echo "### Telas e conexao do cliente"
 java -cp "bin-testes:bin:$CP_LIB" VerificaInterfaces "$PORTA"
+echo
+
+echo "### Tela do cliente, dirigida por cliques"
+java -cp "bin-testes:bin:$CP_LIB" cliente.VerificaTelaDoCliente "$PORTA"
 echo
 
 echo "### Tres clientes simultaneos (regra 1.1)"

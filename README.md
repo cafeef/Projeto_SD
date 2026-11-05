@@ -163,11 +163,12 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 401 verificações em
-sete suítes: validação de campos, tradução das mensagens, as requisições que o
+Compila tudo, sobe um servidor com banco em memória e roda 427 verificações em
+oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as quinze
-operações já implementadas, e as telas mais a conexão do cliente. No fim,
-dispara três clientes simultâneos contra o mesmo servidor.
+operações já implementadas, a construção das telas, e a tela do cliente
+dirigida por cliques. No fim, dispara três clientes simultâneos contra o mesmo
+servidor.
 
 Os testes de transporte e de operações montam os bytes na mão, **sem usar as
 classes do projeto** — reproduzem a situação do teste de interoperabilidade, em
@@ -176,6 +177,13 @@ que o outro lado não compartilha código nenhum com o nosso.
 A suíte do cliente confere o JSON que a interface **monta**, sem abrir janela:
 é esse JSON que o servidor de outro grupo vai receber, então uma chave
 obrigatória que falte aparece ali, e não na frente da turma.
+
+A última suíte vai além e **dirige a janela de verdade**: preenche os campos,
+clica nos botões e confere o que volta para a tela, contra o servidor de
+verdade. Ela existe porque um botão desligado passaria por todas as outras
+verificações sem levantar suspeita — e os nomes dos testes citam as letras dos
+itens avaliados da EP-2, para a conferência antes da entrega ser direta. Numa
+máquina sem ambiente gráfico essa suíte é pulada; o resto roda igual.
 
 ### Testador oficial do protocolo
 
