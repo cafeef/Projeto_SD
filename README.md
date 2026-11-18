@@ -10,9 +10,12 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 
 | Entrega | Escopo | Situação |
 |---|---|---|
-| **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa, em conformidade com a v2.6 |
-| EP-2 | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
+| **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa |
+| **EP-2** | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
 | EP-3 | CRUD de reservas e controle de concorrência | pendente |
+
+Tudo o que está entregue segue a **v2.9.1** do protocolo. No testador oficial,
+as únicas falhas que restam são as de Reservas, que é a EP-3.
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
 
@@ -240,9 +243,8 @@ perfil. Para começar do zero, basta apagar a pasta `dados/`.
 As tabelas são `usuarios`, `sessoes`, `salas`, `sala_recursos`, `sala_slots` e
 `reservas`. Os
 recursos de cada sala ficam em tabela própria, uma linha por recurso, em vez de
-concatenados numa coluna: concatenar exigiria escolher um separador, e o
-protocolo não define formato para os itens de `resources` — qualquer separador
-poderia aparecer dentro de um recurso e partir a lista em duas.
+concatenados numa coluna: concatenar exigiria escolher um separador que pudesse
+aparecer dentro de um recurso e partir a lista em duas.
 
 A tabela `reservas` é da EP-3, mas nasce já na EP-2 porque duas respostas desta
 entrega dependem dela: o campo `available` do `list_rooms` e o 409 "Sala possui
@@ -327,11 +329,28 @@ lib/               Bibliotecas, versionadas para o projeto rodar sem baixar nada
 
 A especificação é mantida pela turma e hoje vive em um documento AsyncAPI
 (`asyncapi.yaml`) no repositório `protocolo-reserva-salas`. Este código está em
-conformidade com a **versão 2.8**.
+conformidade com a **versão 2.9.1**.
+
+### O que mudou da 2.8 para a 2.9.1
+
+A EP-2 foi entregue na 2.8 e depois alinhada à 2.9.1. As mudanças que tocaram
+este código:
+
+| Regra | Mudança |
+|---|---|
+| 9.7 | `resources` ganhou formato (`^[A-Za-z0-9 -]{1,30}$`); `[]` passou a significar **não alterar** e `["0"]` é quem apaga todos |
+| 2.14 | filtro de listagem enviado vazio (`""`) virou 400 — antes era lido como "sem filtro" |
+| 2.13 | `update_room` sem nada para mudar responde 400 "Nenhum dado para atualizar" |
+| 9.6 | reduzir a `capacity` abaixo de uma reserva ativa responde 409 |
+| 9.1 | reserva "ativa" é a que ainda não **terminou**, por instante e não por dia |
+| 5.5 | `update_room` e `delete_room` usam o lock por `room_id`, como as reservas |
+| 1.6 | o limite de 8192 bytes vale só para a **requisição**; respostas de listagem podem passar disso |
+| 4.1 | mensagem sem `op`, ou com `op` que não é string, responde "Requisicao invalida" e não "Operacao desconhecida" |
+| 4.2 | `delete_user` com token torto responde "Token em formato invalido", e não a mensagem de senha |
 
 O arquivo `Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da
 planilha original (versão 2.0), em que a EP-1 foi escrita, e fica como
-histórico. As diferenças da 2.0 para a 2.8 que afetam a EP-1 são cinco: e-mail
+histórico. As diferenças da 2.0 para a 2.9.1 que afetam a EP-1 são cinco: e-mail
 aceita domínio de vários níveis; `delete_user` com senha errada responde 403
 "Senha incorreta" sem derrubar a sessão; alterar usuário sem mudar nada responde
 400 "Nenhum dado para atualizar"; o login checa e cria a sessão na mesma seção

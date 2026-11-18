@@ -14,7 +14,7 @@ import servidor.modelo.Usuario;
  *
  * Concentra a parte que e igual em todas elas e define a ordem de validacao:
  *
- *   1. formato do token ...... 400 (mensagem propria de cada operacao)
+ *   1. formato do token ...... 400 (regra 4.2)
  *   2. sessao valida ......... 401 "Token invalido ou expirado"
  *   3. regra da operacao ..... delegado a subclasse
  *
@@ -23,19 +23,33 @@ import servidor.modelo.Usuario;
  * para 400 e 401 ("Token em formato invalido" x "Token invalido ou expirado"),
  * o que so faz sentido se o formato for conferido primeiro.
  *
- * Sobre a mensagem de 400: a planilha define UMA mensagem de 400 por operacao,
- * entao e ela que sai para qualquer reprovacao de formato daquela operacao --
- * inclusive a do token. E por isso que o delete_user responde 400 com "Senha em
- * formato invalido" mesmo quando o problema esta no token.
+ * Sobre a mensagem de 400: cada operacao tem UMA mensagem de formato, e e ela
+ * que sai para qualquer reprovacao de campo. O token e a excecao da regra 4.2
+ * (v2.9.1): nas quatro operacoes que declaram a resposta "Token em formato
+ * invalido" -- logout, read_user, admin_list_users e delete_user -- e essa
+ * mensagem que sai quando o token esta ausente ou malformado, mesmo que a
+ * mensagem geral da operacao seja outra. E o caso do delete_user, cuja
+ * mensagem de formato e "Senha em formato invalido": token torto responde
+ * "Token em formato invalido"; senha torta, a dele.
  */
 public abstract class HandlerAutenticado implements Handler {
 
     private final String op;
     private final String mensagem400;
+    private final String mensagem400Token;
 
     protected HandlerAutenticado(String op, String mensagem400) {
+        this(op, mensagem400, mensagem400);
+    }
+
+    /**
+     * @param mensagem400Token a mensagem de 400 so do token (regra 4.2), para
+     *                         as operacoes em que ela difere da geral
+     */
+    protected HandlerAutenticado(String op, String mensagem400, String mensagem400Token) {
         this.op = op;
         this.mensagem400 = mensagem400;
+        this.mensagem400Token = mensagem400Token;
     }
 
     @Override
@@ -44,7 +58,7 @@ public abstract class HandlerAutenticado implements Handler {
         try {
             token = Validador.obrigatorio(requisicao, "token");
         } catch (CampoInvalidoException e) {
-            return Resposta.de(op, "400", mensagem400);
+            return Resposta.de(op, "400", mensagem400Token);
         }
 
         // Regra 3.8: o autor sai do token; o cliente nunca diz quem e.

@@ -43,9 +43,10 @@ import java.nio.charset.StandardCharsets;
  *   delroom &lt;id&gt;
  *
  * Os comandos de sala usam ';' entre os campos, e nao espaco, porque nome e
- * local tem espaco dentro. Os recursos vao separados por virgula, e viajam
- * SEMPRE como lista completa: campo vazio quer dizer "sala sem recurso nenhum",
- * nao "manter os de antes" -- e assim que o protocolo define 'resources'.
+ * local tem espaco dentro. Os recursos vao separados por virgula, como lista
+ * completa. No setroom valem as tres formas da regra 9.7: "-" mantem os
+ * recursos atuais, o campo vazio apaga todos, e qualquer lista substitui a
+ * anterior inteira. No newroom o campo vazio e uma sala sem recurso nenhum.
  *
  * Os horarios usam o codigo da UTFPR, tambem separados por virgula:
  * "2M1, 2M2, 3T1". Ali o campo vazio quer dizer o CONTRARIO -- mantem os
@@ -269,10 +270,9 @@ public class ClienteConsole {
                 req.addProperty("name", vazioSeTraco(c[1]));
                 req.addProperty("capacity", vazioSeTraco(c[2]));
                 req.addProperty("location", vazioSeTraco(c[3]));
-                // Sem "-" aqui de proposito: 'resources' nao tem como dizer
-                // "nao alterar", porque "" nao e valor de array. A lista
-                // enviada substitui a anterior inteira.
-                req.add("resources", PainelSalas.recursosDeTexto(c[4]));
+                // Regra 9.7: "-" vira [] (nao alterar), vazio vira ["0"]
+                // (apagar todos), e qualquer outra coisa substitui a lista.
+                req.add("resources", recursosDeSetroom(c[4]));
                 req.addProperty("room_status", vazioSeTraco(c[5]));
                 // Regra 8.7: lista vazia mantem os horarios atuais.
                 req.add("slots", PainelSalas.slotsDeTexto(c[6]));
@@ -334,6 +334,20 @@ public class ClienteConsole {
             limpos[i] = partes[i].trim();
         }
         return limpos;
+    }
+
+    /** O 'resources' do setroom nas tres formas da regra 9.7. */
+    private static com.google.gson.JsonArray recursosDeSetroom(String campo) {
+        String limpo = campo.trim();
+        if ("-".equals(limpo)) {
+            return new com.google.gson.JsonArray();
+        }
+        if (limpo.isEmpty()) {
+            com.google.gson.JsonArray apagar = new com.google.gson.JsonArray();
+            apagar.add(protocolo.Validador.APAGAR_RECURSOS);
+            return apagar;
+        }
+        return PainelSalas.recursosDeTexto(limpo);
     }
 
     /** Regra 2.11: "-" digitado vira "", que quer dizer "nao alterar". */

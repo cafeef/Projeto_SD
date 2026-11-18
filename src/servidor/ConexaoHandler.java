@@ -1,12 +1,9 @@
 package servidor;
 
-import protocolo.EnvioExcedeLimiteException;
 import protocolo.Erros;
 import protocolo.Framing;
 import protocolo.MensagemExcedeLimiteException;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -42,7 +39,7 @@ public class ConexaoHandler implements Runnable {
             while (true) {
                 String requisicao;
                 try {
-                    requisicao = framing.receber();
+                    requisicao = framing.receberRequisicao();
                 } catch (MensagemExcedeLimiteException e) {
                     // Regra 4.3: responde 400 e continua -- o Framing ja
                     // ressincronizou o stream descartando ate o proximo LF.
@@ -72,41 +69,15 @@ public class ConexaoHandler implements Runnable {
     }
 
     /**
-     * Envia garantindo que ALGUMA resposta sempre sai (regra 4.5).
+     * Envia a resposta e registra no terminal (obs. 3 da planilha de avaliacao).
      *
-     * Uma resposta legitima pode passar de 8192 bytes: uma listagem com muitos
-     * registros, por exemplo. Como nao existe frame valido a escrever e fechar a
-     * conexao violaria a regra 4.5, cai para o 500 da regra 4.4, que e curto e
-     * sempre cabe. Quando as listagens da EP-2 chegarem, a solucao correta passa
-     * a ser limitar o tamanho ANTES de montar a resposta.
+     * Desde a v2.9.1 a resposta nao tem limite de tamanho (regra 1.6): uma
+     * listagem cresce com os dados, e truncar ou recusar seria pior do que
+     * mandar uma linha longa -- o cliente le ate o LF de qualquer jeito. Antes
+     * disso, uma listagem grande virava 500 aqui.
      */
     private void responder(Framing framing, String par, String resposta) throws IOException {
-        try {
-            framing.enviar(resposta);
-            log.registrar("[" + par + "] enviou:  " + resposta);
-            return;
-        } catch (EnvioExcedeLimiteException e) {
-            log.registrar("[" + par + "] " + e.getMessage() + "; respondendo 500");
-        }
-        String fallback = Erros.erroInterno(opDaResposta(resposta));
-        try {
-            framing.enviar(fallback);
-        } catch (EnvioExcedeLimiteException impossivel) {
-            throw new IllegalStateException("resposta de erro estourou o limite", impossivel);
-        }
-        log.registrar("[" + par + "] enviou:  " + fallback);
-    }
-
-    /** Recupera a 'op' original da resposta que nao coube, para o 500 sair com o nome certo. */
-    private String opDaResposta(String resposta) {
-        try {
-            JsonObject json = JsonParser.parseString(resposta).getAsJsonObject();
-            String op = json.get("op").getAsString();
-            return op.endsWith("_response")
-                    ? op.substring(0, op.length() - "_response".length())
-                    : op;
-        } catch (RuntimeException e) {
-            return null;
-        }
+        framing.enviar(resposta);
+        log.registrar("[" + par + "] enviou:  " + resposta);
     }
 }

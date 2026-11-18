@@ -59,6 +59,9 @@ final class Mensagens {
             Map.entry("Sala atualizada com sucesso", "Sala atualizada com sucesso."),
             Map.entry("Sala removida com sucesso", "Sala removida com sucesso."),
             Map.entry("Sala possui reservas ativas", "Esta sala possui reservas ativas."),
+            // Regra 9.6: encolher a sala abaixo de um grupo ja marcado.
+            Map.entry("Capacidade menor que participantes de reservas ativas",
+                    "A capacidade é menor que o número de participantes de uma reserva ativa."),
             // erros de protocolo (secao 4)
             Map.entry("Requisicao invalida", "Requisição inválida."),
             Map.entry("Operacao desconhecida", "Operação desconhecida."),

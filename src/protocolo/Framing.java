@@ -18,7 +18,8 @@ import java.nio.charset.StandardCharsets;
  *  1.3 Codificacao ......... UTF-8 explicito nos dois sentidos
  *  1.4 Formato ............. uma mensagem = um JSON em linha unica
  *  1.5 Delimitador ......... cada mensagem termina com LF ('\n')
- *  1.6 Tamanho maximo ...... 8192 bytes por mensagem, incluindo o LF
+ *  1.6 Tamanho maximo ...... 8192 bytes por REQUISICAO, incluindo o LF;
+ *                            resposta sem limite (v2.9.1)
  *  1.9 Conexao ............. timeout de inatividade de 300 s
  *
  * Por que nao usar PrintWriter/BufferedReader: PrintWriter(OutputStream) usa o
@@ -31,8 +32,20 @@ import java.nio.charset.StandardCharsets;
  */
 public class Framing implements Closeable {
 
-    /** Regra 1.6: 8192 bytes por mensagem, ja incluindo o LF. */
+    /** Regra 1.6: 8192 bytes por requisicao, ja incluindo o LF. */
     public static final int TAMANHO_MAXIMO = 8192;
+
+    /**
+     * Teto de leitura de uma RESPOSTA.
+     *
+     * A regra 1.6 tirou o limite das respostas na v2.9.1, porque uma listagem
+     * cresce com os dados e nao cabe num numero fixo. Mas ler sem teto nenhum
+     * deixaria o cliente a merce de um servidor que nunca manda o LF: o buffer
+     * cresceria ate a memoria acabar. Este teto nao e do protocolo -- e
+     * folgado de proposito, umas 128 vezes o limite de requisicao, para nao
+     * recusar nenhuma listagem plausivel.
+     */
+    public static final int TETO_DE_RESPOSTA = 1024 * 1024;
 
     /** Regra 1.9: timeout de inatividade de 300 s. */
     public static final int TIMEOUT_INATIVIDADE_MS = 300_000;
@@ -52,13 +65,14 @@ public class Framing implements Closeable {
     /**
      * Envia uma mensagem: serializa em UTF-8, acrescenta o LF e faz flush.
      *
+     * Sem limite de tamanho desde a v2.9.1 (regra 1.6): o teto de 8192 bytes
+     * vale para requisicoes, e quem o aplica e o lado que RECEBE, em
+     * receberRequisicao(). Uma listagem grande sai inteira.
+     *
      * @param json objeto JSON ja serializado em linha unica (use
      *             com.google.gson.Gson#toJson, que nunca emite LF literal)
-     * @throws EnvioExcedeLimiteException se a mensagem nao cabe no limite da
-     *         regra 1.6; quem chama deve enviar algo menor no lugar, e nunca
-     *         fechar a conexao sem resposta (regra 4.5)
      */
-    public void enviar(String json) throws IOException, EnvioExcedeLimiteException {
+    public void enviar(String json) throws IOException {
         if (json == null) {
             throw new IllegalArgumentException("mensagem nula");
         }
@@ -69,9 +83,6 @@ public class Framing implements Closeable {
                     "mensagem contem quebra de linha literal; use JSON em linha unica (regra 1.4)");
         }
         byte[] corpo = json.getBytes(StandardCharsets.UTF_8);
-        if (corpo.length + 1 > TAMANHO_MAXIMO) {
-            throw new EnvioExcedeLimiteException(corpo.length + 1);
-        }
         saida.write(corpo);
         saida.write('\n');
         saida.flush();
@@ -87,6 +98,26 @@ public class Framing implements Closeable {
      *         de modo que a proxima chamada volta a ler mensagens normalmente
      */
     public String receber() throws IOException, MensagemExcedeLimiteException {
+        return receber(TAMANHO_MAXIMO);
+    }
+
+    /**
+     * Le uma REQUISICAO: vale o limite de 8192 bytes da regra 1.6, e passar
+     * dele faz a linha ser descartada ate o proximo LF.
+     */
+    public String receberRequisicao() throws IOException, MensagemExcedeLimiteException {
+        return receber(TAMANHO_MAXIMO);
+    }
+
+    /**
+     * Le uma RESPOSTA: sem o limite de 8192 bytes (regra 1.6, v2.9.1), porque
+     * as listagens crescem com os dados. Vale so o teto de memoria.
+     */
+    public String receberResposta() throws IOException, MensagemExcedeLimiteException {
+        return receber(TETO_DE_RESPOSTA);
+    }
+
+    private String receber(int limite) throws IOException, MensagemExcedeLimiteException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream(256);
         int b;
         while ((b = entrada.read()) != -1) {
@@ -94,9 +125,9 @@ public class Framing implements Closeable {
                 return decodificar(buffer.toByteArray());
             }
             buffer.write(b);
-            // Ao chegar a TAMANHO_MAXIMO bytes de corpo, a mensagem ja nao cabe
-            // no limite nem que o proximo byte seja o LF (corpo + LF > 8192).
-            if (buffer.size() >= TAMANHO_MAXIMO) {
+            // Ao chegar ao limite de bytes de corpo, a mensagem ja nao cabe nem
+            // que o proximo byte seja o LF (corpo + LF > limite).
+            if (buffer.size() >= limite) {
                 int descartados = descartarAteLF(buffer.size());
                 throw new MensagemExcedeLimiteException(descartados);
             }

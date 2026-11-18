@@ -91,6 +91,23 @@ public class VerificaCliente {
         confere("o estado escolhido no combo viaja como room_status",
                 "inactive".equals(texto(alteracao, "room_status")));
 
+        // Regra 9.7: no update_room, [] passou a significar "nao alterar".
+        // Quem quer apagar os recursos manda ["0"], e e isso que o campo em
+        // branco vira -- o formulario chega preenchido com os recursos atuais,
+        // entao apaga-lo e um pedido, nao um descuido.
+        confere("update_room com recursos em branco manda [\"0\"] (apagar)",
+                PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "", "", "", "")
+                        .getAsJsonArray("resources").toString().equals("[\"0\"]"));
+        confere("update_room com recursos preenchidos manda a lista",
+                PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "", "tv, projetor", "", "")
+                        .getAsJsonArray("resources").toString()
+                        .equals("[\"tv\",\"projetor\"]"));
+        // No create_room o vazio continua sendo "sala sem recurso nenhum":
+        // nao ha recurso anterior para manter nem para apagar.
+        confere("create_room com recursos em branco manda [] (sala sem recursos)",
+                PainelSalas.requisicaoDeCadastro(TOKEN, "Sala X", "4", "Bloco A", "", "2M1")
+                        .getAsJsonArray("resources").size() == 0);
+
         // Todos os valores sao strings, inclusive os numericos (regra 2.7).
         confere("capacity viaja como string, nao como numero (regra 2.7)",
                 alteracao.get("capacity").getAsJsonPrimitive().isString());

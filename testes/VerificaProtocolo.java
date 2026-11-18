@@ -43,13 +43,24 @@ public class VerificaProtocolo {
                   enviaLe(out, in, "{\"op\":\"operacao_inexistente\"}"),
                   "\"op\":\"error\"", "\"Operacao desconhecida\"");
 
-            checa("op ausente", enviaLe(out, in, "{\"texto\":\"x\"}"),
-                  "\"Operacao desconhecida\"");
+            // Regra 4.1 (v2.9.1): sem 'op', ou com 'op' que nao e string, a
+            // mensagem nem chega a ser uma requisicao -- "Requisicao
+            // invalida", como um JSON quebrado. So 'op' que E string e nao
+            // conhecemos vira "Operacao desconhecida", que e o teste acima.
+            checa("op ausente -> Requisicao invalida (regra 4.1)",
+                  enviaLe(out, in, "{\"texto\":\"x\"}"),
+                  "\"op\":\"error\"", "\"Requisicao invalida\"");
 
-            checa("op numerica, nao string (regra 2.3)", enviaLe(out, in, "{\"op\":123}"),
-                  "\"Operacao desconhecida\"");
+            checa("op numerica, nao string (regras 2.3 e 4.1)",
+                  enviaLe(out, in, "{\"op\":123}"), "\"Requisicao invalida\"");
 
-            checa("op null (regra 2.10)", enviaLe(out, in, "{\"op\":null}"),
+            checa("op null (regras 2.10 e 4.1)", enviaLe(out, in, "{\"op\":null}"),
+                  "\"Requisicao invalida\"");
+
+            // 'op' que e string mas nao passa na regex continua sendo uma
+            // operacao que nao existe, e nao uma requisicao malformada.
+            checa("op com formato estranho ainda e Operacao desconhecida",
+                  enviaLe(out, in, "{\"op\":\"NAO_EXISTE 42\"}"),
                   "\"Operacao desconhecida\"");
 
             checa("campo obrigatorio ausente", enviaLe(out, in, "{\"op\":\"eco\"}"),
@@ -80,16 +91,21 @@ public class VerificaProtocolo {
             checa("borda: 8192 bytes de corpo + LF = 8193, recusada",
                   enviaLe(out, in, comTamanho(8192)), "\"Mensagem excede o tamanho maximo\"");
 
-            // Requisicao valida e dentro do limite, mas cuja RESPOSTA estoura o
-            // limite. Nao pode fechar a conexao calada (regra 4.5): responde 500.
+            // Requisicao dentro do limite cuja RESPOSTA passa de 8192 bytes.
+            // Regra 1.6 (v2.9.1): o limite e so da requisicao, entao a resposta
+            // sai inteira. Ate a v2.8 isto virava 500, e uma listagem grande
+            // ficava impossivel de devolver.
             StringBuilder grande = new StringBuilder("{\"op\":\"eco\",\"texto\":\"");
             for (int i = 0; i < 8150; i++) grande.append('c');
             grande.append("\"}");
-            checa("resposta que estouraria o limite vira 500 (regras 4.4 e 4.5)",
-                  enviaLe(out, in, grande.toString()),
-                  "\"op\":\"eco_response\"", "\"status\":\"500\"", "\"Erro interno do servidor\"");
+            String respostaGrande = enviaLe(out, in, grande.toString());
+            checa("resposta acima de 8192 bytes sai inteira (regra 1.6)",
+                  respostaGrande, "\"op\":\"eco_response\"", "\"status\":\"200\"");
+            checa("a resposta grande passou mesmo do limite de requisicao",
+                  respostaGrande.length() > 8192 ? "ok" : "curta demais: "
+                          + respostaGrande.length(), "ok");
 
-            checa("conexao sobrevive ao 500",
+            checa("conexao sobrevive a resposta grande",
                   enviaLe(out, in, "{\"op\":\"eco\",\"texto\":\"vivo\"}"),
                   "\"status\":\"200\"", "\"echo\":\"VIVO\"");
 

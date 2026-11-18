@@ -53,6 +53,9 @@ public final class Validador {
         m.put("location",       Pattern.compile("^[A-Za-z0-9 ,.-]{1,60}$"));
         m.put("room_status",    Pattern.compile("^(active|inactive)$"));
         m.put("min_capacity",   Pattern.compile("^[1-9][0-9]{0,3}$"));
+        // Recurso de sala (regra 9.7, v2.9). O item "0" e reservado: sozinho na
+        // lista ele APAGA todos os recursos, entao nunca e um recurso de verdade.
+        m.put("recurso",        Pattern.compile("^[A-Za-z0-9 -]{1,30}$"));
         // Horario da grade da UTFPR: dia + turno + aula (regra 8.1).
         m.put("slot",           Pattern.compile("^[2-7](M[1-6]|T[1-6]|N[1-5])$"));
         // --- Reservas ---
@@ -140,25 +143,30 @@ public final class Validador {
     }
 
     /**
-     * Le um filtro opcional: ausente ou vazio vira {@code null}; presente tem
-     * que casar com a regex. Usado nas listagens, cujos filtros sao opcionais.
+     * Le um filtro opcional de listagem (regra 2.14, v2.9.1).
+     *
+     * Ausente = sem filtro. Mas o filtro ENVIADO precisa ser valido: "" e null
+     * respondem 400, e nao "sem filtro". A diferenca importa porque o vazio
+     * aqui nao tem o sentido que tem numa atualizacao -- numa listagem nao ha
+     * valor anterior para "manter". Quem nao quer filtrar omite a chave, e e o
+     * que o nosso cliente faz.
+     *
+     * @return o filtro validado, ou {@code null} quando a chave nao veio
      */
     public static String filtroOpcional(JsonObject requisicao, String campo)
             throws CampoInvalidoException {
-        String valor = opcionalAtualizacao(requisicao, campo);
-        return (valor == null || valor.isEmpty()) ? null : valor;
+        if (!requisicao.has(campo)) {
+            return null;
+        }
+        return obrigatorio(requisicao, campo);
     }
 
     /**
-     * Le um campo que e um ARRAY de strings -- hoje so o 'resources' das salas.
+     * Le um campo que e um ARRAY de strings, sem olhar o formato dos itens.
      *
-     * O protocolo exige a chave presente e nao define formato para os itens:
-     * sao strings livres, e o array vazio e valido (sala sem recurso nenhum).
-     * Por isso aqui nao ha regex: recusar um recurso que o protocolo aceita
-     * quebraria a interoperabilidade exatamente como aceitar um que ele recusa.
-     *
-     * O tamanho nao precisa de limite proprio -- o enquadramento ja corta
-     * qualquer mensagem acima de 8192 bytes antes de ela chegar aqui.
+     * Base de listaDeRecursos e listaDeSlots, que acrescentam cada uma as suas
+     * regras. O array vazio e valido aqui: o que ele SIGNIFICA depende da
+     * operacao, e quem decide isso e o handler.
      *
      * @return a lista na ordem enviada; vazia se o array veio vazio
      * @throws CampoInvalidoException se a chave falta, veio null, nao e array
@@ -186,6 +194,49 @@ public final class Validador {
             itens.add(item.getAsString());
         }
         return itens;
+    }
+
+    /** Regra 9.7: o unico item de 'resources' que nao e um recurso. */
+    public static final String APAGAR_RECURSOS = "0";
+
+    /**
+     * Diz se a lista e o pedido de apagar todos os recursos: {@code ["0"]}.
+     *
+     * So vale sozinho. {@code ["0", "tv"]} nao apaga nada -- e 400, porque "0"
+     * nao e nome de recurso valido.
+     */
+    public static boolean apagaTodosOsRecursos(List<String> recursos) {
+        return recursos.size() == 1 && APAGAR_RECURSOS.equals(recursos.get(0));
+    }
+
+    /**
+     * Le o 'resources' de uma sala (regra 9.7, v2.9).
+     *
+     * Cada recurso segue a mesma regex do nome da sala, e "0" nunca e um
+     * recurso: ele e o sentinela que apaga a lista inteira no update_room.
+     * Como "0" PASSA na regex, a recusa dele precisa ser explicita -- sem
+     * isso, cadastrar um recurso chamado "0" criaria uma sala que, na proxima
+     * alteracao, nao teria como ser descrita sem apagar tudo.
+     *
+     * @param aceitaApagarTudo true no update_room, onde {@code ["0"]} e um
+     *                         pedido valido; false no create_room, onde apagar
+     *                         o que ainda nao existe nao quer dizer nada
+     * @throws CampoInvalidoException se a chave falta, nao e array, ou tem item
+     *         fora do formato
+     */
+    public static List<String> listaDeRecursos(JsonObject requisicao, boolean aceitaApagarTudo)
+            throws CampoInvalidoException {
+        List<String> recursos = listaDeTextos(requisicao, "resources");
+        if (aceitaApagarTudo && apagaTodosOsRecursos(recursos)) {
+            return recursos;
+        }
+        for (String recurso : recursos) {
+            if (APAGAR_RECURSOS.equals(recurso) || !formatoValido("recurso", recurso)) {
+                throw new CampoInvalidoException("resources",
+                        CampoInvalidoException.Motivo.FORMATO_INVALIDO);
+            }
+        }
+        return recursos;
     }
 
     /**

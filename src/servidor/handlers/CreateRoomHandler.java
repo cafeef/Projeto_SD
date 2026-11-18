@@ -47,7 +47,10 @@ public class CreateRoomHandler extends HandlerAdmin {
             localizacao = Validador.obrigatorio(requisicao, "location");
             // Obrigatorio tambem: o protocolo pede a lista sempre, e a sala sem
             // recurso nenhum se declara com [], nao omitindo a chave.
-            recursos = Validador.listaDeTextos(requisicao, "resources");
+            // Regra 9.7: cada recurso tem formato, e "0" e recusado -- aqui ele
+            // nao tem nem o sentido que tem no update_room, porque nao ha
+            // recurso nenhum para apagar numa sala que esta sendo criada.
+            recursos = Validador.listaDeRecursos(requisicao, false);
             // Regra 8.2: obrigatorio, com pelo menos um horario e sem repetir.
             // Sala sem horario nenhum nao poderia receber reserva alguma.
             slots = Validador.listaDeSlots(requisicao, true);

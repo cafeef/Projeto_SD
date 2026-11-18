@@ -122,7 +122,7 @@ final class PainelSalas extends JPanel {
                         + " 2M1 = segunda, manhã, 1ª aula.")
                 .dica("Dia 2 a 7 (segunda a sábado) · turno M, T ou N ·"
                         + " aula 1 a 6 (M e T) ou 1 a 5 (N).")
-                .dica("Recursos separados por vírgula.")
+                .dica("Recursos separados por vírgula; em branco apaga todos.")
                 .dica("Nome: letras, números, espaço e hífen, até 30 caracteres.")
                 .dica("Clique numa sala da tabela para carregá-la aqui.");
 
@@ -513,7 +513,15 @@ final class PainelSalas extends JPanel {
         req.addProperty("name", nome.trim());
         req.addProperty("capacity", capacidade.trim());
         req.addProperty("location", local.trim());
-        req.add("resources", recursosDeTexto(recursos));
+        // Regra 9.7 (v2.9): [] passou a significar "nao alterar", entao o campo
+        // em branco nao apaga mais os recursos -- quem apaga e ["0"]. O campo
+        // vem preenchido com os recursos atuais da sala, entao apaga-lo e um
+        // pedido deliberado, e e esse pedido que mandamos.
+        JsonArray lista = recursosDeTexto(recursos);
+        if (lista.size() == 0) {
+            lista.add(protocolo.Validador.APAGAR_RECURSOS);
+        }
+        req.add("resources", lista);
         req.addProperty("room_status", estado);
         // Regra 8.7: lista vazia mantem os horarios atuais, entao o campo em
         // branco nao apaga nada -- ao contrario do 'resources'.

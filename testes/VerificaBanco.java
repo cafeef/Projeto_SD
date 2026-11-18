@@ -286,18 +286,39 @@ public class VerificaBanco {
         confere("existeNome encontra a sala", SalaDAO.existeNome("Sala de Estudo B12"));
         confere("existeNome nao inventa sala", !SalaDAO.existeNome("Sala Que Nao Existe"));
 
+        // Regra 2.15: renomear a sala para o nome que ela ja tem nao e conflito.
+        confere("existeNomeDeOutraSala ignora a propria sala",
+                !SalaDAO.existeNomeDeOutraSala(idB12, "Sala de Estudo B12"));
+        confere("existeNomeDeOutraSala acusa o nome de outra sala",
+                SalaDAO.existeNomeDeOutraSala(idVazia, "Sala de Estudo B12"));
+
         // --- reservas: sustentam o 'available' e o 409 do delete_room ---
-        confere("sala nova nao tem reserva futura", !SalaDAO.temReservaFutura(idB12));
+        confere("sala nova nao tem reserva ativa", !SalaDAO.temReservaAtiva(idB12));
+        confere("sala sem reserva tem grupo maximo zero",
+                SalaDAO.maiorGrupoComReservaAtiva(idB12) == 0);
         Set<Integer> livres = SalaDAO.ocupadasNoPeriodo(
                 LocalDate.now().plusDays(1), LocalTime.of(14, 0), LocalTime.of(16, 0));
         confere("sem reserva nenhuma sala aparece ocupada", livres.isEmpty());
 
         LocalDate amanha = LocalDate.now().plusDays(1);
         inserirReserva(idB12, idJoao, amanha, "14:00", "16:00");
-        confere("reserva futura bloqueia a remocao da sala",
-                SalaDAO.temReservaFutura(idB12));
+        confere("reserva ativa bloqueia a remocao da sala",
+                SalaDAO.temReservaAtiva(idB12));
         confere("a outra sala continua livre para remover",
-                !SalaDAO.temReservaFutura(idVazia));
+                !SalaDAO.temReservaAtiva(idVazia));
+
+        // Regra 9.6: o piso da capacidade e o maior grupo ja marcado.
+        confere("o grupo maximo da sala e o da reserva",
+                SalaDAO.maiorGrupoComReservaAtiva(idB12) == 4);
+
+        // Regra 9.1: ativa e a que ainda nao TERMINOU. Uma reserva de ontem ja
+        // acabou, entao nao segura a sala -- antes da v2.9 ela seguraria, porque
+        // a comparacao era por dia.
+        inserirReserva(idVazia, idJoao, LocalDate.now().minusDays(1), "14:00", "16:00");
+        confere("reserva de ontem nao conta como ativa (regra 9.1)",
+                !SalaDAO.temReservaAtiva(idVazia));
+        confere("reserva encerrada nao entra no grupo maximo",
+                SalaDAO.maiorGrupoComReservaAtiva(idVazia) == 0);
 
         // Colisao: os limites sao estritos, entao encostar nao e colidir.
         confere("periodo identico colide",

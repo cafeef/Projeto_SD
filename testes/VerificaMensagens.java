@@ -31,6 +31,7 @@ public class VerificaMensagens {
         acentuada("Dados da sala em formato invalido");
         acentuada("Filtros em formato invalido");
         acentuada("Sala ja cadastrada");
+        acentuada("Capacidade menor que participantes de reservas ativas");
 
         // Algumas mensagens do protocolo nao tem acento nenhum. A traducao
         // delas acrescenta so o ponto final -- mas tem que existir no mapa,

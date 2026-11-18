@@ -258,25 +258,74 @@ public final class SalaDAO {
     }
 
     /**
-     * Diz se a sala tem reserva ativa de hoje para frente -- a condicao do 409
-     * "Sala possui reservas ativas" do delete_room.
+     * Diz se a sala tem reserva ATIVA -- a condicao do 409 "Sala possui
+     * reservas ativas" do delete_room.
      *
-     * A comparacao e por DIA, nao por instante: uma reserva de hoje as 8h ainda
-     * conta, mesmo que ja tenha passado. Remover a sala apagaria o registro de
-     * uma reserva que o dono acabou de usar, e o protocolo oferece caminho
-     * melhor para isso -- deixar a sala "inactive".
+     * Regra 9.1 (v2.9): ativa e a reserva que ainda nao TERMINOU, ou seja
+     * 'dia' + 'fim' no futuro. A comparacao e por instante, nao por dia: a
+     * reserva de hoje das 8h as 9h, as 10h da manha, ja acabou e nao impede a
+     * remocao da sala. Ela e apagada junto, como manda a regra 9.8.
      */
-    public static boolean temReservaFutura(int id) throws SQLException {
+    public static boolean temReservaAtiva(int id) throws SQLException {
         try (Connection c = Banco.conexao();
              PreparedStatement ps = c.prepareStatement(
                      "SELECT 1 FROM reservas"
-                             + " WHERE sala_id = ? AND ativa = TRUE AND dia >= ? LIMIT 1")) {
+                             + " WHERE sala_id = ? AND ativa = TRUE"
+                             + "   AND (dia > ? OR (dia = ? AND fim > ?)) LIMIT 1")) {
             ps.setInt(1, id);
-            ps.setDate(2, Date.valueOf(LocalDate.now()));
+            marcarAgora(ps, 2, 3, 4);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
         }
+    }
+
+    /**
+     * O maior 'participantes' entre as reservas ativas da sala, ou 0 se nao ha
+     * nenhuma. E o piso da capacidade no update_room (regra 9.6).
+     *
+     * Basta o maior: se a nova capacidade comporta a maior reserva, comporta
+     * todas as outras.
+     */
+    public static int maiorGrupoComReservaAtiva(int id) throws SQLException {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT COALESCE(MAX(participantes), 0) FROM reservas"
+                             + " WHERE sala_id = ? AND ativa = TRUE"
+                             + "   AND (dia > ? OR (dia = ? AND fim > ?))")) {
+            ps.setInt(1, id);
+            marcarAgora(ps, 2, 3, 4);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getInt(1) : 0;
+            }
+        }
+    }
+
+    /**
+     * Diz se OUTRA sala ja tem esse nome.
+     *
+     * Exclui a propria sala por causa da regra 2.15: renomear uma sala para o
+     * nome que ela ja tem e uma alteracao valida (200), e nao um conflito.
+     */
+    public static boolean existeNomeDeOutraSala(int id, String nome) throws SQLException {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT 1 FROM salas WHERE nome = ? AND id <> ?")) {
+            ps.setString(1, nome);
+            ps.setInt(2, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** Preenche "hoje, hoje, agora" nos tres parametros do recorte da regra 9.1. */
+    private static void marcarAgora(PreparedStatement ps, int dia1, int dia2, int hora)
+            throws SQLException {
+        LocalDate hoje = LocalDate.now();
+        ps.setDate(dia1, Date.valueOf(hoje));
+        ps.setDate(dia2, Date.valueOf(hoje));
+        ps.setTime(hora, Time.valueOf(LocalTime.now()));
     }
 
     /**

@@ -14,7 +14,7 @@ import servidor.modelo.Usuario;
  *
  * O alvo vem do token e a senha confirma a operacao. Sequencia de checagens:
  *
- *   1. token fora de formato ........ 400
+ *   1. token fora de formato ........ 400 "Token em formato invalido" (regra 4.2)
  *   2. token invalido ou expirado ... 401   (as duas na classe base)
  *   3. senha fora de formato ........ 400
  *   4. senha incorreta .............. 403
@@ -28,7 +28,9 @@ import servidor.modelo.Usuario;
 public class DeleteUserHandler extends HandlerAutenticado {
 
     public DeleteUserHandler() {
-        super("delete_user", "Senha em formato invalido");
+        // Regra 4.2: o delete_user tem as duas mensagens de 400 -- a do token
+        // e a dele. Token torto nao e "senha em formato invalido".
+        super("delete_user", "Senha em formato invalido", "Token em formato invalido");
     }
 
     @Override

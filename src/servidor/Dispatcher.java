@@ -66,17 +66,23 @@ public class Dispatcher {
             }
             JsonObject requisicao = raiz.getAsJsonObject();
 
-            // Regra 2.1: toda mensagem tem 'op'. Ausente, nula, de outro tipo ou
-            // fora do formato cai no mesmo lugar que uma 'op' inexistente.
-            try {
-                op = Validador.obrigatorio(requisicao, "op");
-            } catch (CampoInvalidoException e) {
-                return Erros.operacaoDesconhecida();
+            // Regra 4.1 (v2.9.1): os dois erros sao distintos e a diferenca e
+            // quem errou. Sem 'op', ou com 'op' que nao e string, a mensagem
+            // nao chega a ser uma requisicao -- e "Requisicao invalida", o
+            // mesmo que um JSON quebrado. Com 'op' que e string mas nao
+            // conhecemos, a mensagem esta bem formada e o que falta e a
+            // operacao: "Operacao desconhecida". Util entre grupos, porque
+            // separa "voce mandou lixo" de "eu nao implementei isso".
+            JsonElement campoOp = requisicao.get("op");
+            if (campoOp == null || !campoOp.isJsonPrimitive()
+                    || !campoOp.getAsJsonPrimitive().isString()) {
+                return Erros.requisicaoInvalida();
             }
+            op = campoOp.getAsString();
 
             Handler handler = handlers.get(op);
             if (handler == null) {
-                return Erros.operacaoDesconhecida();   // regra 4.2
+                return Erros.operacaoDesconhecida();
             }
 
             JsonObject resposta = handler.tratar(requisicao);

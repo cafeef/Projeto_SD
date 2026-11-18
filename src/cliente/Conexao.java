@@ -42,6 +42,11 @@ public class Conexao implements Closeable {
     /**
      * Envia a requisicao e devolve a resposta crua.
      *
+     * O limite de 8192 bytes da regra 1.6 vale para a REQUISICAO, e e conferido
+     * aqui: melhor falhar com mensagem clara do que mandar uma linha que o
+     * servidor vai descartar. A resposta nao tem limite desde a v2.9.1, porque
+     * as listagens crescem com os dados.
+     *
      * @return o JSON de resposta, ou null se o servidor encerrou a conexao
      */
     public synchronized String enviarEReceber(String json)
@@ -49,8 +54,12 @@ public class Conexao implements Closeable {
         if (!estaConectado()) {
             throw new IOException("nao conectado");
         }
+        int bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length + 1;
+        if (bytes > Framing.TAMANHO_MAXIMO) {
+            throw new EnvioExcedeLimiteException(bytes);
+        }
         framing.enviar(json);
-        return framing.receber();
+        return framing.receberResposta();
     }
 
     public void fechar() {

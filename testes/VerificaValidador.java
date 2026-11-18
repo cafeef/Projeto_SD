@@ -100,15 +100,54 @@ public class VerificaValidador {
         lista("array de strings passa", "{\"resources\":[\"projetor\",\"tv\"]}", "projetor,tv");
         lista("array vazio e valido (sala sem recurso)", "{\"resources\":[]}", "");
         lista("a ordem enviada e preservada", "{\"resources\":[\"tv\",\"projetor\"]}", "tv,projetor");
-        // Sem regex nos itens de proposito: o protocolo nao define formato para
-        // eles, e recusar um recurso que ele aceita quebra a interoperabilidade.
-        lista("recurso com acento e espaco passa", "{\"resources\":[\"ar condicionado\"]}",
+        lista("recurso com espaco passa", "{\"resources\":[\"ar condicionado\"]}",
                 "ar condicionado");
         motivoLista("chave ausente", "{}", Motivo.AUSENTE);
         motivoLista("null explicito", "{\"resources\":null}", Motivo.NULO);
         motivoLista("string onde se espera array", "{\"resources\":\"projetor\"}", Motivo.TIPO_INVALIDO);
         motivoLista("numero dentro do array (2.4)", "{\"resources\":[\"tv\",2]}", Motivo.TIPO_INVALIDO);
         motivoLista("objeto dentro do array", "{\"resources\":[{\"a\":\"b\"}]}", Motivo.TIPO_INVALIDO);
+
+        // --- 'resources' com as regras da v2.9 (regra 9.7) ---
+        recursos("recurso simples passa", "{\"resources\":[\"projetor\"]}", false, "projetor");
+        recursos("lista vazia passa", "{\"resources\":[]}", false, "");
+        recursos("hifen e numero passam", "{\"resources\":[\"tv-4k\",\"sala 2\"]}", false,
+                "tv-4k,sala 2");
+        // O sentinela de apagar tudo so existe na atualizacao.
+        recursos("[\"0\"] passa no update_room", "{\"resources\":[\"0\"]}", true, "0");
+        recursoInvalido("[\"0\"] nao passa no create_room", "{\"resources\":[\"0\"]}", false);
+        // "0" acompanhado nao e sentinela nem recurso: e 400 nos dois casos.
+        recursoInvalido("\"0\" junto de outro recurso", "{\"resources\":[\"0\",\"tv\"]}", true);
+        recursoInvalido("recurso com acento", "{\"resources\":[\"ventila\u00e7\u00e3o\"]}", true);
+        recursoInvalido("recurso com @", "{\"resources\":[\"tv@4k\"]}", true);
+        recursoInvalido("recurso vazio", "{\"resources\":[\"\"]}", true);
+        recursoInvalido("recurso acima de 30 caracteres",
+                "{\"resources\":[\"" + "a".repeat(31) + "\"]}", true);
+
+        confere("apagaTodosOsRecursos reconhece [\"0\"]",
+                Validador.apagaTodosOsRecursos(java.util.List.of("0")));
+        confere("apagaTodosOsRecursos ignora a lista vazia",
+                !Validador.apagaTodosOsRecursos(java.util.List.of()));
+        confere("apagaTodosOsRecursos exige o \"0\" sozinho",
+                !Validador.apagaTodosOsRecursos(java.util.List.of("0", "tv")));
+
+        // --- filtros de listagem: "" deixou de ser "sem filtro" (regra 2.14) ---
+        try {
+            confere("filtro ausente e sem filtro",
+                    Validador.filtroOpcional(json("{}"), "min_capacity") == null);
+            confere("filtro preenchido vale",
+                    "8".equals(Validador.filtroOpcional(json("{\"min_capacity\":\"8\"}"),
+                            "min_capacity")));
+        } catch (CampoInvalidoException e) {
+            falha("filtro valido lancou " + e.getMotivo());
+        }
+        try {
+            Validador.filtroOpcional(json("{\"min_capacity\":\"\"}"), "min_capacity");
+            falha("filtro vazio deveria ser 400 (regra 2.14)");
+        } catch (CampoInvalidoException e) {
+            confere("filtro vazio e 400, nao \"sem filtro\" (regra 2.14)",
+                    e.getMotivo() == Motivo.VAZIO);
+        }
 
         // --- erro de digitacao no nosso codigo falha alto, nao passa batido ---
         try {
@@ -150,6 +189,26 @@ public class VerificaValidador {
             falha("resources: " + nome + " (nao lancou)");
         } catch (CampoInvalidoException e) {
             confere("resources: " + nome + " -> " + e.getMotivo(), e.getMotivo() == esperado);
+        }
+    }
+
+    /** Confere listaDeRecursos comparando os itens unidos por virgula. */
+    static void recursos(String nome, String req, boolean aceitaApagar, String esperado) {
+        try {
+            String obtido = String.join(",",
+                    Validador.listaDeRecursos(json(req), aceitaApagar));
+            confere("recursos: " + nome + " -> [" + obtido + "]", esperado.equals(obtido));
+        } catch (CampoInvalidoException e) {
+            falha("recursos: " + nome + " lancou " + e.getMotivo());
+        }
+    }
+
+    static void recursoInvalido(String nome, String req, boolean aceitaApagar) {
+        try {
+            Validador.listaDeRecursos(json(req), aceitaApagar);
+            falha("recursos: " + nome + " (nao lancou)");
+        } catch (CampoInvalidoException e) {
+            confere("recursos: " + nome + " -> " + e.getMotivo(), true);
         }
     }
 

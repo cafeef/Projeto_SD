@@ -821,17 +821,56 @@ public class VerificaOperacoes {
                     nomeSala.equals(campo(depois, "name")));
             confere("o estado foi preservado pelo \"\"",
                     "active".equals(campo(depois, "room_status")));
-            // 'resources' e a excecao: vem como lista completa, entao a lista
-            // enviada substitui a anterior inteira.
+            // Uma lista nova substitui a anterior inteira (regra 9.7).
             confere("resources foi substituido pela lista enviada",
                     depois.getAsJsonArray("resources").toString().equals("[\"projetor\"]"));
 
-            checa("200 lista vazia de resources apaga os recursos",
-                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "", "")),
+            // Regra 9.7 (v2.9): [] passou a significar "nao alterar". Antes
+            // apagava, e e justamente essa a mudanca da v2.9.
+            checa("200 lista vazia de resources mantem os recursos (regra 9.7)",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "21", "", "", "")),
+                    "update_room_response", "200", "Sala atualizada com sucesso");
+            confere("os recursos continuam la depois do []",
+                    json(c.envia(req("read_room", "token", tokenComum, "room_id", roomId)))
+                            .getAsJsonArray("resources").toString().equals("[\"projetor\"]"));
+
+            // Quem apaga e ["0"], o sentinela que a v2.9 criou para isso.
+            checa("200 resources [\"0\"] apaga todos os recursos (regra 9.7)",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "\"0\"", "")),
                     "update_room_response", "200", "Sala atualizada com sucesso");
             confere("a sala ficou sem recurso nenhum",
                     json(c.envia(req("read_room", "token", tokenComum, "room_id", roomId)))
                             .getAsJsonArray("resources").size() == 0);
+
+            // "0" so vale sozinho: acompanhado, volta a ser um nome invalido.
+            checa("400 \"0\" junto de outro recurso nao apaga nada",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "\"0\",\"tv\"", "")),
+                    "update_room_response", "400", "Dados da sala em formato invalido");
+            checa("400 recurso com caractere fora da regex (regra 9.7)",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "\"tv@4k\"", "")),
+                    "update_room_response", "400", "Dados da sala em formato invalido");
+            checa("400 create_room com recurso \"0\" (regra 9.7)",
+                    adm.envia(reqSala("create_room", tokenAdmin, "Sala " + nome(),
+                            "4", "Bloco B", "\"0\"")),
+                    "create_room_response", "400", "Dados da sala em formato invalido");
+
+            // Regra 2.13: tudo vazio e as duas listas vazias -- nada a fazer.
+            checa("400 update_room sem nada para mudar (regra 2.13)",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, "", "", "", "", "")),
+                    "update_room_response", "400", "Nenhum dado para atualizar");
+
+            // Regra 2.14: filtro enviado vazio e 400, e nao "sem filtro".
+            checa("400 list_rooms com filtro vazio (regra 2.14)",
+                    c.envia(req("list_rooms", "token", tokenComum, "min_capacity", "")),
+                    "list_rooms_response", "400", "Filtros em formato invalido");
+            checa("400 read_room com date vazia (regra 2.14)",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", roomId, "date", "")),
+                    "read_room_response", "400", "Dados em formato invalido");
+
+            // Regra 2.15: mandar o valor que a sala ja tem e alteracao valida.
+            checa("200 renomear a sala para o nome que ela ja tem (regra 2.15)",
+                    adm.envia(reqAtualizaSala(tokenAdmin, roomId, nomeSala, "", "", "", "")),
+                    "update_room_response", "200", "Sala atualizada com sucesso");
 
             // Uma segunda sala, para o 409 de nome e para a listagem.
             String nomeOutra = "Sala " + nome();
