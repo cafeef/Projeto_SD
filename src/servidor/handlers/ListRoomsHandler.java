@@ -38,26 +38,6 @@ public class ListRoomsHandler extends HandlerAutenticado {
         super("list_rooms", "Filtros em formato invalido");
     }
 
-    /**
-     * Diz se a sala funciona em TODAS as aulas do periodo pedido.
-     *
-     * Basta uma aula fora do funcionamento para a sala nao servir: reservar
-     * das 13:00 as 14:40 numa terca exige que a sala funcione em 3T1 e em 3T2.
-     * Domingo nunca passa, porque a grade da UTFPR nao tem domingo.
-     */
-    private static boolean funcionaNoPeriodo(Sala sala, LocalDate dia, List<String> aulas) {
-        Character digito = Horarios.digitoDoDia(dia);
-        if (digito == null || aulas.isEmpty()) {
-            return false;
-        }
-        for (String aula : aulas) {
-            if (!sala.getSlots().contains(digito + aula)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     @Override
     protected JsonObject tratarAutenticado(JsonObject requisicao, Usuario autor, String token)
             throws Exception {
@@ -129,7 +109,7 @@ public class ListRoomsHandler extends HandlerAutenticado {
                 //  - nao funcionar em alguma das aulas do periodo (regra 8.4);
                 //  - ja ter reserva que colida com o periodo.
                 disponivel = sala.estaAtiva()
-                        && funcionaNoPeriodo(sala, dia, aulasPedidas)
+                        && sala.funcionaNoPeriodo(dia, aulasPedidas)
                         && !ocupadas.contains(sala.getId());
             }
             lista.add(SalaJson.de(sala, disponivel));

@@ -79,6 +79,32 @@ public class Sala {
         return Horarios.slotsDoDia(slots, dia);
     }
 
+    /**
+     * Diz se a sala funciona em TODAS as aulas de um periodo (regra 8.4).
+     *
+     * Basta uma aula fora do funcionamento para a sala nao servir: reservar
+     * das 13:00 as 14:40 numa terca exige 3T1 e 3T2. Domingo nunca passa,
+     * porque a grade da UTFPR nao tem domingo.
+     *
+     * Fica no modelo, e nao no handler, porque a mesma pergunta e feita em
+     * tres lugares -- list_rooms, check_availability e create_reservation --
+     * e tres copias dela poderiam discordar sobre a mesma sala.
+     *
+     * @param aulas as aulas que o periodo cobre, de Horarios.aulasEntre
+     */
+    public boolean funcionaNoPeriodo(java.time.LocalDate dia, List<String> aulas) {
+        Character digito = Horarios.digitoDoDia(dia);
+        if (digito == null || aulas.isEmpty()) {
+            return false;
+        }
+        for (String aula : aulas) {
+            if (!slots.contains(digito + aula)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Corresponde a 'room_status': "active" ou "inactive". */
     public String getEstado() {
         return estado;

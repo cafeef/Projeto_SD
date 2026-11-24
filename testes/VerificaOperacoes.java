@@ -58,6 +58,14 @@ public class VerificaOperacoes {
                         && servidor.ServidorConsole.criarDispatcher().conhece("update_room")
                         && servidor.ServidorConsole.criarDispatcher().conhece("delete_room"));
 
+        confere("dispatcher de producao conhece as 5 operacoes de reserva da EP-3",
+                servidor.ServidorConsole.criarDispatcher().conhece("check_availability")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("create_reservation")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("list_reservations")
+                        && servidor.ServidorConsole.criarDispatcher().conhece("read_reservation")
+                        && servidor.ServidorConsole.criarDispatcher()
+                                .conhece("delete_reservation"));
+
         registrar();
         login();
         logout();
@@ -66,6 +74,7 @@ public class VerificaOperacoes {
         deleteUser();
         operacoesAdmin();
         operacoesDeSalas();
+        operacoesDeReservas();
 
         // Regra 2.8: 'message' viaja em portugues SEM acento e sem emoji. Se
         // alguem "corrigir" os textos para portugues acentuado, a resposta deixa
@@ -1050,6 +1059,363 @@ public class VerificaOperacoes {
 
     static String campo(JsonObject o, String chave) {
         return o.has(chave) && !o.get(chave).isJsonNull() ? o.get(chave).getAsString() : null;
+    }
+
+    // ----------------------------------------------------------------- reservas
+
+    /**
+     * As cinco operacoes de reserva da EP-3 que nao dependem da questao em
+     * aberto do update_reservation (itens b, c, d, f e i da planilha).
+     *
+     * As datas sao calculadas, e nao escritas a mao: uma data fixa passaria a
+     * ser passado depois de alguns meses e a suite comecaria a falhar sozinha,
+     * atribuindo a um bug o que seria so a passagem do tempo.
+     */
+    static void operacoesDeReservas() throws Exception {
+        System.out.println("\n-- operacoes de reservas --");
+        try (Conn adm = new Conn(); Conn c = new Conn(); Conn c2 = new Conn()) {
+            String tokenAdmin = campo(json(adm.envia(req("login",
+                    "email", "admin@admin.com", "password", "admin"))), "token");
+            if (tokenAdmin == null) {
+                confere("login do administrador para os testes de reserva", false);
+                return;
+            }
+
+            String u = nome(), e = u + "@email.com";
+            c.envia(req("register", "email", e, "user", u, "password", "senha123"));
+            String tokenComum = campo(json(c.envia(req("login", "email", e,
+                    "password", "senha123"))), "token");
+
+            String u2 = nome(), e2 = u2 + "@email.com";
+            c2.envia(req("register", "email", e2, "user", u2, "password", "senha123"));
+            String tokenOutro = campo(json(c2.envia(req("login", "email", e2,
+                    "password", "senha123"))), "token");
+
+            // Sala que funciona so nas tercas a tarde: T1, T2 e T3.
+            String nomeSala = "Sala " + nome();
+            String sala = campo(json(adm.envia(reqSala("create_room", tokenAdmin, nomeSala,
+                    "10", "Bloco C", "", "\"3T1\",\"3T2\",\"3T3\""))), "room_id");
+            confere("sala de reservas criada", sala != null);
+
+            String terca = proximaTerca();
+            String quarta = proximaQuarta();
+
+            // ----------------------------------------------- check_availability
+            checa("400 check_availability sem o horario",
+                    c.envia(req("check_availability", "token", tokenComum,
+                            "room_id", sala, "date", terca)),
+                    "check_availability_response", "400", "Dados em formato invalido");
+
+            checa("400 check_availability com fim antes do inicio (regra 9.11)",
+                    c.envia(reqDisponibilidade(tokenComum, sala, terca, "14:40", "13:00")),
+                    "check_availability_response", "400", "Dados em formato invalido");
+
+            checa("400 check_availability fora da grade da UTFPR (regra 8.3)",
+                    c.envia(reqDisponibilidade(tokenComum, sala, terca, "14:00", "16:00")),
+                    "check_availability_response", "400", "Dados em formato invalido");
+
+            checa("404 check_availability de sala inexistente",
+                    c.envia(reqDisponibilidade(tokenComum, "999999", terca, "13:00", "14:40")),
+                    "check_availability_response", "404", "Sala nao encontrada");
+
+            JsonObject livre = json(c.envia(
+                    reqDisponibilidade(tokenComum, sala, terca, "13:00", "14:40")));
+            confere("b) check_availability diz que a sala esta livre",
+                    "true".equals(campo(livre, "available")));
+            confere("b) a resposta repete sala, dia e horario",
+                    sala.equals(campo(livre, "room_id"))
+                            && terca.equals(campo(livre, "date"))
+                            && "13:00".equals(campo(livre, "start_time"))
+                            && "14:40".equals(campo(livre, "end_time")));
+
+            // Regra 8.4: numa quarta a sala nao funciona, entao nao esta livre.
+            confere("b) dia em que a sala nao funciona aparece indisponivel",
+                    "false".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, sala, quarta, "13:00", "14:40"))),
+                            "available")));
+
+            // Regra 9.4: consulta aceita data passada e responde normalmente.
+            checa("200 check_availability com data passada (regra 9.4)",
+                    c.envia(reqDisponibilidade(tokenComum, sala, tercaPassada(),
+                            "13:00", "14:40")),
+                    "check_availability_response", "200", "Consulta realizada com sucesso");
+
+            // ----------------------------------------------- create_reservation
+            checa("401 create_reservation com token que nao existe",
+                    c.envia(reqReserva(TOKEN_FALSO, sala, terca, "13:00", "14:40",
+                            "Reuniao de projeto", "4")),
+                    "create_reservation_response", "401", "Token invalido ou expirado");
+
+            checa("400 create_reservation com data inexistente (regra 9.2)",
+                    c.envia(reqReserva(tokenComum, sala, "2026-02-30", "13:00", "14:40",
+                            "Reuniao", "4")),
+                    "create_reservation_response", "400", "Dados da reserva em formato invalido");
+
+            checa("400 create_reservation no passado (regra 9.3)",
+                    c.envia(reqReserva(tokenComum, sala, tercaPassada(), "13:00", "14:40",
+                            "Reuniao", "4")),
+                    "create_reservation_response", "400", "Dados da reserva em formato invalido");
+
+            checa("400 create_reservation com topic acentuado",
+                    c.envia(reqReserva(tokenComum, sala, terca, "13:00", "14:40",
+                            "Reuniao de projecao", "0")),
+                    "create_reservation_response", "400", "Dados da reserva em formato invalido");
+
+            checa("404 create_reservation em sala inexistente",
+                    c.envia(reqReserva(tokenComum, "999999", terca, "13:00", "14:40",
+                            "Reuniao", "4")),
+                    "create_reservation_response", "404", "Sala nao encontrada");
+
+            checa("400 participants acima da capacity da sala",
+                    c.envia(reqReserva(tokenComum, sala, terca, "13:00", "14:40",
+                            "Reuniao grande", "99")),
+                    "create_reservation_response", "400", "Dados da reserva em formato invalido");
+
+            // Regra 8.4: a sala nao funciona na quarta.
+            checa("409 reserva em dia fora do funcionamento da sala (regra 8.4)",
+                    c.envia(reqReserva(tokenComum, sala, quarta, "13:00", "14:40",
+                            "Reuniao", "4")),
+                    "create_reservation_response", "409",
+                    "Horario fora do funcionamento da sala");
+
+            JsonObject criada = json(c.envia(reqReserva(tokenComum, sala, terca,
+                    "13:00", "14:40", "Reuniao de projeto", "4")));
+            String reserva = campo(criada, "reservation_id");
+            confere("d) usuario comum faz uma reserva (201 com reservation_id)",
+                    "201".equals(campo(criada, "status")) && reserva != null);
+
+            // Regra 5.2: o check_availability de antes nao reservou nada, mas
+            // agora que a reserva existe a sala aparece ocupada.
+            confere("b) depois da reserva, a sala aparece ocupada",
+                    "false".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, sala, terca, "13:00", "14:40"))),
+                            "available")));
+
+            checa("409 segunda reserva no mesmo horario (regra 5.4)",
+                    c2.envia(reqReserva(tokenOutro, sala, terca, "13:00", "14:40",
+                            "Outra reuniao", "2")),
+                    "create_reservation_response", "409",
+                    "Sala ja reservada no periodo solicitado");
+
+            // Regra 5.4: encostar nao e colidir -- 14:40 comeca onde a outra acaba.
+            JsonObject encostada = json(c2.envia(reqReserva(tokenOutro, sala, terca,
+                    "14:40", "15:30", "Reuniao encostada", "2")));
+            confere("201 reserva que encosta na anterior nao colide (regra 5.4)",
+                    "201".equals(campo(encostada, "status")));
+            String reservaDoOutro = campo(encostada, "reservation_id");
+
+            // ------------------------------------------------ list_reservations
+            JsonObject minhas = json(c.envia(req("list_reservations", "token", tokenComum)));
+            confere("c) sem scope, lista so as proprias reservas",
+                    "1".equals(campo(minhas, "count")));
+            JsonObject item = minhas.getAsJsonArray("reservations").get(0).getAsJsonObject();
+            confere("c) o item traz sala, dia e horario alocados",
+                    sala.equals(campo(item, "room_id"))
+                            && nomeSala.equals(campo(item, "name"))
+                            && terca.equals(campo(item, "date"))
+                            && "13:00".equals(campo(item, "start_time"))
+                            && "14:40".equals(campo(item, "end_time"))
+                            && "Reuniao de projeto".equals(campo(item, "topic"))
+                            && "4".equals(campo(item, "participants"))
+                            && u.equals(campo(item, "user")));
+
+            checa("403 usuario comum com scope \"all\"",
+                    c.envia(req("list_reservations", "token", tokenComum, "scope", "all")),
+                    "list_reservations_response", "403", "Permissao insuficiente");
+
+            confere("admin com scope \"all\" ve as duas reservas",
+                    Integer.parseInt(campo(json(adm.envia(req("list_reservations",
+                            "token", tokenAdmin, "scope", "all", "room_id", sala))),
+                            "count")) == 2);
+
+            confere("filtro de data recorta a listagem",
+                    "0".equals(campo(json(c.envia(req("list_reservations",
+                            "token", tokenComum, "date", quarta))), "count")));
+
+            // Regra 9.12: filtro de sala inexistente nao da 404.
+            checa("200 list_reservations com sala inexistente (regra 9.12)",
+                    c.envia(req("list_reservations", "token", tokenComum, "room_id", "999999")),
+                    "list_reservations_response", "200", "Consulta realizada com sucesso");
+
+            // Regra 2.14: filtro enviado vazio e 400.
+            checa("400 list_reservations com filtro vazio (regra 2.14)",
+                    c.envia(req("list_reservations", "token", tokenComum, "date", "")),
+                    "list_reservations_response", "400", "Filtros em formato invalido");
+
+            // ------------------------------------------------- read_reservation
+            JsonObject lida = json(c.envia(req("read_reservation",
+                    "token", tokenComum, "reservation_id", reserva)));
+            confere("c) o dono le a propria reserva pelo id",
+                    "200".equals(campo(lida, "status"))
+                            && reserva.equals(campo(lida, "reservation_id"))
+                            && campo(lida, "created_at") != null);
+
+            checa("403 reserva de outro usuario",
+                    c2.envia(req("read_reservation", "token", tokenOutro,
+                            "reservation_id", reserva)),
+                    "read_reservation_response", "403", "Permissao insuficiente");
+
+            checa("200 o admin le a reserva de qualquer um",
+                    adm.envia(req("read_reservation", "token", tokenAdmin,
+                            "reservation_id", reserva)),
+                    "read_reservation_response", "200", "Consulta realizada com sucesso");
+
+            checa("404 read_reservation de id inexistente",
+                    c.envia(req("read_reservation", "token", tokenComum,
+                            "reservation_id", "999999")),
+                    "read_reservation_response", "404", "Reserva nao encontrada");
+
+            // ----------------------------------------------- delete_reservation
+            checa("403 cancelar reserva de outro usuario",
+                    c2.envia(req("delete_reservation", "token", tokenOutro,
+                            "reservation_id", reserva)),
+                    "delete_reservation_response", "403", "Permissao insuficiente");
+
+            checa("f) o dono cancela a propria reserva",
+                    c.envia(req("delete_reservation", "token", tokenComum,
+                            "reservation_id", reserva)),
+                    "delete_reservation_response", "200", "Reserva cancelada com sucesso");
+
+            checa("404 cancelar de novo: a reserva deixou de existir",
+                    c.envia(req("delete_reservation", "token", tokenComum,
+                            "reservation_id", reserva)),
+                    "delete_reservation_response", "404", "Reserva nao encontrada");
+
+            checa("404 ler uma reserva cancelada",
+                    c.envia(req("read_reservation", "token", tokenComum,
+                            "reservation_id", reserva)),
+                    "read_reservation_response", "404", "Reserva nao encontrada");
+
+            confere("f) o horario volta a ficar livre depois do cancelamento",
+                    "true".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, sala, terca, "13:00", "14:40"))),
+                            "available")));
+
+            // Regra 3.14: o admin cancela reserva de terceiro -- mas nao altera.
+            checa("o admin cancela a reserva de outro usuario (regra 3.14)",
+                    adm.envia(req("delete_reservation", "token", tokenAdmin,
+                            "reservation_id", reservaDoOutro)),
+                    "delete_reservation_response", "200", "Reserva cancelada com sucesso");
+
+            // ------------------------------------- i) duas reservas simultaneas
+            reservasSimultaneas(sala, terca, tokenComum, tokenOutro);
+
+            // Sala inactive nao aceita reserva nenhuma.
+            adm.envia(reqAtualizaSala(tokenAdmin, sala, "", "", "", "", "inactive"));
+            checa("409 reserva em sala inactive",
+                    c.envia(reqReserva(tokenComum, sala, terca, "13:00", "13:50",
+                            "Reuniao", "4")),
+                    "create_reservation_response", "409", "Sala indisponivel para reserva");
+
+            // Limpeza: a sala fica com reservas canceladas, que nao impedem o
+            // delete_room, e as outras suites nao herdam uma sala a mais.
+            adm.envia(req("delete_room", "token", tokenAdmin, "room_id", sala));
+            adm.envia(req("admin_delete_user", "token", tokenAdmin, "target_user", u));
+            adm.envia(req("admin_delete_user", "token", tokenAdmin, "target_user", u2));
+            // O logout e obrigatorio: a sessao unica (regra 3.5) sobrevive ao
+            // fechamento do socket (regra 1.11), e sem ele a proxima suite
+            // levaria 409 ao logar como admin.
+            adm.envia(req("logout", "token", tokenAdmin));
+        }
+    }
+
+    /**
+     * Item i: dois clientes pedindo o MESMO horario ao mesmo tempo.
+     *
+     * Repete algumas rodadas porque uma corrida pode nao se manifestar numa
+     * tentativa so -- o erro que a tranca evita e justamente o que depende de
+     * duas threads se cruzarem num instante estreito.
+     */
+    static void reservasSimultaneas(String sala, String dia, String tokenA, String tokenB)
+            throws Exception {
+        // T3 (14:40-15:30): tem que ser um horario que a sala de teste
+        // REALMENTE tem, senao as duas requisicoes levam 409 de funcionamento
+        // e o teste passaria a medir outra coisa.
+        String[] horarios = {"14:40", "15:30"};
+        boolean sempreUmaSo = true;
+        for (int rodada = 0; rodada < 5 && sempreUmaSo; rodada++) {
+            String inicio = horarios[0];
+            String fim = horarios[1];
+            String[] respostas = new String[2];
+            Thread[] threads = new Thread[2];
+            String[] tokens = {tokenA, tokenB};
+            for (int i = 0; i < 2; i++) {
+                final int n = i;
+                threads[i] = new Thread(() -> {
+                    try (Conn conn = new Conn()) {
+                        respostas[n] = conn.envia(reqReserva(tokens[n], sala, dia,
+                                inicio, fim, "Corrida " + n, "2"));
+                    } catch (IOException erro) {
+                        respostas[n] = "{\"status\":\"erro de I/O\"}";
+                    }
+                });
+            }
+            for (Thread t : threads) t.start();
+            for (Thread t : threads) t.join();
+
+            int criadas = 0, conflitos = 0;
+            String idCriado = null;
+            for (String resposta : respostas) {
+                JsonObject r = json(resposta);
+                if ("201".equals(campo(r, "status"))) {
+                    criadas++;
+                    idCriado = campo(r, "reservation_id");
+                } else if ("409".equals(campo(r, "status"))) {
+                    conflitos++;
+                }
+            }
+            sempreUmaSo = criadas == 1 && conflitos == 1;
+
+            // Libera o horario para a proxima rodada usar o mesmo recorte.
+            if (idCriado != null) {
+                try (Conn conn = new Conn()) {
+                    conn.envia(req("delete_reservation", "token", tokenA,
+                            "reservation_id", idCriado));
+                    conn.envia(req("delete_reservation", "token", tokenB,
+                            "reservation_id", idCriado));
+                }
+            }
+        }
+        confere("i) duas reservas simultaneas: uma 201 e uma 409 (regra 5.1, 5 rodadas)",
+                sempreUmaSo);
+    }
+
+    /** Monta um check_availability. */
+    static String reqDisponibilidade(String token, String sala, String dia,
+                                     String inicio, String fim) {
+        return req("check_availability", "token", token, "room_id", sala,
+                "date", dia, "start_time", inicio, "end_time", fim);
+    }
+
+    /** Monta um create_reservation com as sete chaves que o protocolo exige. */
+    static String reqReserva(String token, String sala, String dia, String inicio,
+                             String fim, String assunto, String participantes) {
+        return req("create_reservation", "token", token, "room_id", sala,
+                "date", dia, "start_time", inicio, "end_time", fim,
+                "topic", assunto, "participants", participantes);
+    }
+
+    /** A proxima terca-feira depois de hoje, no formato do protocolo. */
+    static String proximaTerca() {
+        return proximoDia(java.time.DayOfWeek.TUESDAY, 1).toString();
+    }
+
+    /** A proxima quarta-feira: dia em que a sala de teste NAO funciona. */
+    static String proximaQuarta() {
+        return proximoDia(java.time.DayOfWeek.WEDNESDAY, 1).toString();
+    }
+
+    /** Uma terca-feira que ja passou, para os testes das regras 9.3 e 9.4. */
+    static String tercaPassada() {
+        return proximoDia(java.time.DayOfWeek.TUESDAY, 1).minusWeeks(2).toString();
+    }
+
+    private static java.time.LocalDate proximoDia(java.time.DayOfWeek alvo, int minimoDeDias) {
+        java.time.LocalDate dia = java.time.LocalDate.now().plusDays(minimoDeDias);
+        while (dia.getDayOfWeek() != alvo) {
+            dia = dia.plusDays(1);
+        }
+        return dia;
     }
 
     /** Confere op, status e message -- os tres campos que a regra 2.6 obriga. */
