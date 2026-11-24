@@ -153,6 +153,7 @@ public final class ClienteGUI extends JFrame {
     };
 
     private final PainelSalas painelSalas = new PainelSalas(canal);
+    private final PainelReservas painelReservas = new PainelReservas(canal);
     private final PainelUsuarios painelUsuarios = new PainelUsuarios(canal);
 
     /** A aba de usuários, guardada para poder entrar e sair da tela. */
@@ -307,6 +308,7 @@ public final class ClienteGUI extends JFrame {
 
         abasSessao.addTab("  Meu cadastro  ", comMargem(painelMeuCadastro()));
         abasSessao.addTab("  Salas  ", comMargem(painelSalas));
+        abasSessao.addTab("  Reservas  ", comMargem(painelReservas));
 
         // O logout fica FORA das abas, embaixo delas. Ele encerra a sessão
         // inteira, não o que está na aba aberta, e dentro de uma aba rolável
@@ -357,6 +359,7 @@ public final class ClienteGUI extends JFrame {
      */
     private void aplicarPerfil() {
         painelSalas.aplicarPerfil();
+        painelReservas.aplicarPerfil();
         int indice = abasSessao.indexOfComponent(abaUsuarios);
         if (ehAdmin && indice < 0) {
             abasSessao.addTab("  Usuários  ", abaUsuarios);
@@ -723,6 +726,7 @@ public final class ClienteGUI extends JFrame {
         novaSenha.setText("");
         ehAdmin = false;
         painelSalas.limpar();
+        painelReservas.limpar();
         painelUsuarios.limpar();
         aplicarPerfil();
     }
@@ -784,6 +788,7 @@ public final class ClienteGUI extends JFrame {
         botaoExcluir.setEnabled(habilitado);
         botaoSair.setEnabled(habilitado);
         painelSalas.habilitar(habilitado);
+        painelReservas.habilitar(habilitado);
         painelUsuarios.habilitar(habilitado);
     }
 

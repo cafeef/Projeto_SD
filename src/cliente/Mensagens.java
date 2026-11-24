@@ -62,6 +62,20 @@ final class Mensagens {
             // Regra 9.6: encolher a sala abaixo de um grupo ja marcado.
             Map.entry("Capacidade menor que participantes de reservas ativas",
                     "A capacidade é menor que o número de participantes de uma reserva ativa."),
+            // --- reservas (EP-3) ---
+            Map.entry("Reserva realizada com sucesso", "Reserva realizada com sucesso."),
+            Map.entry("Reserva cancelada com sucesso", "Reserva cancelada com sucesso."),
+            Map.entry("Reserva atualizada com sucesso", "Reserva atualizada com sucesso."),
+            Map.entry("Reserva nao encontrada", "Reserva não encontrada."),
+            Map.entry("Dados da reserva em formato invalido",
+                    "Dados da reserva em formato inválido."),
+            Map.entry("Sala ja reservada no periodo solicitado",
+                    "Esta sala já está reservada nesse horário."),
+            Map.entry("Sala indisponivel para reserva",
+                    "Esta sala está inativa e não aceita reservas."),
+            Map.entry("Horario fora do funcionamento da sala",
+                    "A sala não funciona nesse horário."),
+            Map.entry("Reserva ja encerrada", "Esta reserva já terminou."),
             // erros de protocolo (secao 4)
             Map.entry("Requisicao invalida", "Requisição inválida."),
             Map.entry("Operacao desconhecida", "Operação desconhecida."),
@@ -95,6 +109,16 @@ final class Mensagens {
         }
         if ("400".equals(status) && "list_rooms_response".equals(op)) {
             return "Data, início e fim precisam ser informados juntos, ou nenhum dos três.";
+        }
+        if ("400".equals(status) && "create_reservation_response".equals(op)) {
+            return "Confira a data, os horários de aula e se o grupo cabe na sala."
+                    + " Reservas só valem para horários futuros.";
+        }
+        if ("409".equals(status) && "create_reservation_response".equals(op)) {
+            return "Consulte a disponibilidade e tente outro horário ou outra sala.";
+        }
+        if ("403".equals(status) && "list_reservations_response".equals(op)) {
+            return "Ver as reservas de todos é uma operação de administrador.";
         }
         if ("403".equals(status) && op != null && op.startsWith("admin_")) {
             return "Seu perfil pode ter sido alterado. Recarregue seus dados.";

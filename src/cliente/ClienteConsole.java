@@ -42,6 +42,19 @@ import java.nio.charset.StandardCharsets;
  *   setroom &lt;id&gt;;&lt;nome|-&gt;;&lt;cap|-&gt;;&lt;local|-&gt;;&lt;recursos&gt;;&lt;estado|-&gt;;&lt;horarios&gt;
  *   delroom &lt;id&gt;
  *
+ * Comandos da EP-3 -- reservas:
+ *
+ *   avail &lt;sala&gt; &lt;data&gt; &lt;inicio&gt; &lt;fim&gt;
+ *   book &lt;sala&gt;;&lt;data&gt;;&lt;inicio&gt;;&lt;fim&gt;;&lt;assunto&gt;;&lt;participantes&gt;
+ *   bookings                          as minhas reservas
+ *   bookings &lt;data|-&gt; &lt;sala|-&gt; [all]
+ *   booking &lt;id&gt;                le uma reserva
+ *   unbook &lt;id&gt;                 cancela uma reserva
+ *
+ * O "all" do bookings pede o scope "all", que so o administrador pode usar.
+ * Falta o comando de ALTERAR reserva: a planilha da EP-3 pede que a alteracao
+ * mude tambem a sala e o dia, e a regra 9.10 proibe as duas chaves.
+ *
  * Os comandos de sala usam ';' entre os campos, e nao espaco, porque nome e
  * local tem espaco dentro. Os recursos vao separados por virgula, como lista
  * completa. No setroom valem as tres formas da regra 9.7: "-" mantem os
@@ -85,6 +98,7 @@ public class ClienteConsole {
             System.out.println("  EP-1: register, login, read, update, delete, logout");
             System.out.println("  EP-2: users, user, setuser, deluser,"
                     + " rooms, room, newroom, setroom, delroom");
+            System.out.println("  EP-3: avail, book, bookings, booking, unbook");
             System.out.println("  raw <json>, /sair\n");
 
             String linha;
@@ -284,6 +298,60 @@ public class ClienteConsole {
                     return erroUso("delroom <id>");
                 }
                 return comToken("delete_room", "room_id", p[1]);
+
+            // ------------------------------------------------ EP-3: reservas
+
+            case "avail":
+                if (p.length < 5) {
+                    return erroUso("avail <sala> <data> <inicio> <fim>");
+                }
+                return comToken("check_availability", "room_id", p[1], "date", p[2],
+                        "start_time", p[3], "end_time", p[4]);
+
+            case "book": {
+                String[] c = campos(linha, 6);
+                if (c == null) {
+                    return erroUso("book <sala>;<data>;<inicio>;<fim>;"
+                            + "<assunto>;<participantes>");
+                }
+                return comToken("create_reservation", "room_id", c[0], "date", c[1],
+                        "start_time", c[2], "end_time", c[3], "topic", c[4],
+                        "participants", c[5]);
+            }
+
+            case "bookings": {
+                if (p.length == 1) {
+                    return comToken("list_reservations");
+                }
+                if (p.length < 3) {
+                    return erroUso("bookings [<data|-> <sala|-> [all]]");
+                }
+                if (token == null) {
+                    return erroUso("faca login primeiro");
+                }
+                JsonObject req = requisicao("list_reservations");
+                req.addProperty("token", token);
+                // Regra 2.14: filtro nao usado e OMITIDO, nunca mandado vazio.
+                acrescentarSeNaoForTraco(req, "date", p[1]);
+                acrescentarSeNaoForTraco(req, "room_id", p[2]);
+                // "mine" e o padrao do protocolo, entao so o "all" viaja.
+                if (p.length > 3 && "all".equals(p[3])) {
+                    req.addProperty("scope", "all");
+                }
+                return GSON.toJson(req);
+            }
+
+            case "booking":
+                if (p.length < 2) {
+                    return erroUso("booking <id>");
+                }
+                return comToken("read_reservation", "reservation_id", p[1]);
+
+            case "unbook":
+                if (p.length < 2) {
+                    return erroUso("unbook <id>");
+                }
+                return comToken("delete_reservation", "reservation_id", p[1]);
 
             case "raw":
                 if (p.length < 2) {

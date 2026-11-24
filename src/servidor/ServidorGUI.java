@@ -13,6 +13,8 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import servidor.dao.SessaoDAO;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -40,6 +42,16 @@ public final class ServidorGUI extends JFrame {
     private final JButton botaoParar = new JButton("Parar");
     private final Estilo.Indicador indicador = new Estilo.Indicador("Parado", false);
     private final JLabel rotuloConectados = new JLabel("Nenhum cliente conectado");
+
+    // Item h da EP-3: quem esta logado, sempre atualizado. Conexao aberta e
+    // sessao sao coisas diferentes -- o rotulo acima conta sockets, esta
+    // tabela conta pessoas. Uma sessao sobrevive ao fechamento da conexao
+    // (regra 1.11), entao um numero nao substitui o outro.
+    private final javax.swing.JTable tabelaLogados =
+            Estilo.tabela("Usuário", "Perfil", "Entrou", "Último uso");
+    private final JLabel rotuloLogados = new JLabel("Ninguém logado");
+    private final javax.swing.Timer relogioDeSessoes =
+            new javax.swing.Timer(3000, e -> atualizarLogados());
 
     private transient ServidorSocket servidor;
 
@@ -108,24 +120,80 @@ public final class ServidorGUI extends JFrame {
         estado.add(Box.createVerticalStrut(6));
         estado.add(rotuloConectados);
 
+        JPanel logados = Estilo.grupo("Usuários logados");
+        logados.setLayout(new BorderLayout(0, 6));
+        rotuloLogados.setForeground(Estilo.CINZA);
+        javax.swing.JScrollPane rolagem = new javax.swing.JScrollPane(tabelaLogados);
+        rolagem.setPreferredSize(new java.awt.Dimension(560, 140));
+        logados.add(rolagem, BorderLayout.CENTER);
+        logados.add(rotuloLogados, BorderLayout.SOUTH);
+
         JLabel rodape = Estilo.rodape(
                 "As mensagens JSON trocadas aparecem no terminal que executa o servidor.");
 
         JPanel conteudo = new JPanel();
         conteudo.setLayout(new BoxLayout(conteudo, BoxLayout.Y_AXIS));
         conteudo.setBorder(Estilo.margem());
-        Estilo.alinharEsquerda(cabecalho, conexao, estado, rodape);
+        Estilo.alinharEsquerda(cabecalho, conexao, estado, logados, rodape);
         conteudo.add(cabecalho);
         conteudo.add(Box.createVerticalStrut(18));
         conteudo.add(conexao);
         conteudo.add(Box.createVerticalStrut(12));
         conteudo.add(estado);
+        conteudo.add(Box.createVerticalStrut(12));
+        conteudo.add(logados);
         conteudo.add(Box.createVerticalGlue());
         conteudo.add(Box.createVerticalStrut(12));
         conteudo.add(rodape);
 
         setLayout(new BorderLayout());
         add(conteudo, BorderLayout.CENTER);
+
+        // "Sempre atualizada": o relogio roda mesmo com o servidor parado,
+        // porque as sessoes vivem no banco e nao na memoria do servidor -- as
+        // de antes do ultimo encerramento continuam valendo (regra 1.11).
+        // Tres segundos e bastante: ninguem acompanha login por cronometro, e
+        // mais frequente so gastaria consulta.
+        atualizarLogados();
+        relogioDeSessoes.start();
+    }
+
+    /**
+     * Recarrega a tabela de logados.
+     *
+     * Roda na EDT, chamada pelo Timer do Swing. A consulta e pequena -- uma
+     * linha por pessoa logada -- e por isso nao vai para outra thread: o custo
+     * de sair da EDT e voltar seria maior que o da propria consulta.
+     */
+    private void atualizarLogados() {
+        // A tela nasce antes do banco abrir: ate la nao ha sessao para mostrar.
+        if (!Banco.estaIniciado()) {
+            rotuloLogados.setText("Banco ainda não aberto");
+            return;
+        }
+        java.util.List<String[]> logados;
+        try {
+            logados = SessaoDAO.usuariosLogados();
+        } catch (java.sql.SQLException e) {
+            rotuloLogados.setText("Não foi possível ler as sessões: " + e.getMessage());
+            return;
+        }
+        var modelo = Estilo.modeloDe(tabelaLogados);
+        // Preserva a linha selecionada: sem isto a selecao piscaria a cada
+        // tres segundos na mao de quem estivesse lendo a tabela.
+        int selecionada = tabelaLogados.getSelectedRow();
+        modelo.setRowCount(0);
+        for (String[] linha : logados) {
+            modelo.addRow(new Object[] {linha[0], linha[1], linha[2], linha[3]});
+        }
+        if (selecionada >= 0 && selecionada < modelo.getRowCount()) {
+            tabelaLogados.setRowSelectionInterval(selecionada, selecionada);
+        }
+        rotuloLogados.setText(logados.isEmpty()
+                ? "Ninguém logado"
+                : logados.size() == 1
+                        ? "1 usuário logado"
+                        : logados.size() + " usuários logados");
     }
 
     private void iniciarServidor() {

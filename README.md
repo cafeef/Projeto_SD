@@ -12,10 +12,23 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa |
 | **EP-2** | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
-| EP-3 | CRUD de reservas e controle de concorrência | pendente |
+| EP-3 | CRUD de reservas e controle de concorrência | 🔸 falta só o `update_reservation` |
 
-Tudo o que está entregue segue a **v2.9.1** do protocolo. No testador oficial,
-as únicas falhas que restam são as de Reservas, que é a EP-3.
+Tudo o que está entregue segue a **v2.9.2** do protocolo. No testador oficial
+são **96 testes passando de 102**, e as seis falhas restantes são todas do
+`update_reservation` — a operação que falta, e que falta de propósito.
+
+### Por que o `update_reservation` não está implementado
+
+A planilha da EP-3 pede, no item e)/m), que a alteração de uma reserva mude
+**"sala, dia e faixa de horário, tópico da reunião, número de participantes"**.
+A regra 9.10 do protocolo proíbe as chaves `room_id` e `date` nessa operação:
+para trocar de sala ou de dia, cancela-se e cria-se outra reserva.
+
+São exigências contraditórias, e nenhuma implementação satisfaz as duas. Em vez
+de escolher sozinho e quebrar a interoperabilidade com os outros grupos, o
+código deixa a operação de fora e documenta o motivo. As outras cinco operações
+de reserva estão completas, no servidor e no cliente.
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
 
@@ -24,6 +37,8 @@ Operações implementadas, com todos os códigos de status previstos no protocol
 - **EP-2** — `admin_list_users`, `admin_read_user`, `admin_update_user`,
   `admin_delete_user`, `create_room`, `list_rooms`, `read_room`, `update_room`,
   `delete_room`
+- **EP-3** — `check_availability`, `create_reservation`, `list_reservations`,
+  `read_reservation`, `delete_reservation`
 
 O poder de administrador sai de uma **whitelist de tokens** (regra 3.14), e não
 do perfil gravado no banco nem de qualquer campo da requisição. Um token entra
@@ -42,8 +57,29 @@ funciona nele. Os horários são obrigatórios no cadastro.
 
 Ler uma sala **com uma data** devolve a agenda daquele dia: um horário por
 linha, livre ou ocupada, e quem reservou. É o que o item (e) da EP-2 pede.
-Enquanto as reservas não existirem (EP-3), todos os horários aparecem livres —
-a estrutura já é a definitiva.
+
+Nas reservas, **verificar a disponibilidade e gravar acontecem na mesma seção
+crítica**, com uma trava por `room_id` (regra 5.1). Sem isso, dois clientes
+pedindo o mesmo horário poderiam os dois consultar, os dois achar livre e os
+dois gravar — cada um correto sozinho, os dois errados juntos. Com a trava, o
+primeiro recebe `201` e o segundo, `409`. É o item (i) da EP-3, e a suíte o
+verifica com threads de verdade, em cinco rodadas.
+
+O `check_availability` é **informativo** (regra 5.2): um `"true"` não segura a
+sala, e a tela do cliente diz isso em palavras. Entre a consulta e a reserva,
+outra pessoa pode chegar antes — o `409` depois de um `"true"` não é
+inconsistência, é a diferença entre perguntar e reservar.
+
+Cancelar uma reserva a **marca** em vez de apagar a linha, mas para o protocolo
+ela deixa de existir: cancelar ou ler de novo responde `404`. O administrador
+**cancela** reserva de terceiro (regra 3.14), mas não **altera** (regra 9.9) —
+liberar uma sala é administração; mudar o assunto da reunião de alguém é se
+passar por essa pessoa.
+
+A tela do servidor mostra **quem está logado**, atualizada a cada três segundos
+(item h da EP-3). Conexão aberta e sessão são coisas diferentes: o contador de
+clientes conta sockets, a tabela conta pessoas — e uma sessão sobrevive ao
+fechamento da conexão (regra 1.11).
 
 No cliente, a aba **Usuários** só existe enquanto a sessão for de
 administrador, e o mesmo vale para o grupo de administração dentro da aba
@@ -169,9 +205,9 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 463 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 583 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
-cliente monta, banco de dados, transporte e erros de protocolo, as quinze
+cliente monta, banco de dados, transporte e erros de protocolo, as vinte
 operações já implementadas, a construção das telas, e a tela do cliente
 dirigida por cliques. No fim, dispara três clientes simultâneos contra o mesmo
 servidor.
@@ -188,8 +224,9 @@ A última suíte vai além e **dirige a janela de verdade**: preenche os campos,
 clica nos botões e confere o que volta para a tela, contra o servidor de
 verdade. Ela existe porque um botão desligado passaria por todas as outras
 verificações sem levantar suspeita — e os nomes dos testes citam as letras dos
-itens avaliados da EP-2, para a conferência antes da entrega ser direta. Numa
-máquina sem ambiente gráfico essa suíte é pulada; o resto roda igual.
+itens avaliados da EP-2 e da EP-3, para a conferência antes da entrega ser
+direta. Numa máquina sem ambiente gráfico essa suíte é pulada; o resto roda
+igual.
 
 ### Testador oficial do protocolo
 
@@ -246,10 +283,11 @@ recursos de cada sala ficam em tabela própria, uma linha por recurso, em vez de
 concatenados numa coluna: concatenar exigiria escolher um separador que pudesse
 aparecer dentro de um recurso e partir a lista em duas.
 
-A tabela `reservas` é da EP-3, mas nasce já na EP-2 porque duas respostas desta
-entrega dependem dela: o campo `available` do `list_rooms` e o 409 "Sala possui
-reservas ativas" do `delete_room`. Sem a tabela, as duas seriam chutes; com ela,
-são consultas de verdade que ainda não encontram nada.
+A coluna `ativa` da tabela `reservas` diz apenas que a reserva **não foi
+cancelada** — ela não é a "reserva ativa" da regra 9.1, que é a que ainda não
+**terminou** e depende da hora. As duas condições andam juntas em quase toda
+consulta, e por isso o modelo inverte o nome para `cancelada`: assim a palavra
+"ativa" não significa duas coisas diferentes conforme a linha do código.
 
 **Os cadastros sobrevivem ao desligamento do servidor; as sessões, não.** Toda
 vez que o servidor passa a escutar, as sessões anteriores são encerradas — afinal
@@ -329,7 +367,7 @@ lib/               Bibliotecas, versionadas para o projeto rodar sem baixar nada
 
 A especificação é mantida pela turma e hoje vive em um documento AsyncAPI
 (`asyncapi.yaml`) no repositório `protocolo-reserva-salas`. Este código está em
-conformidade com a **versão 2.9.1**.
+conformidade com a **versão 2.9.2**.
 
 ### O que mudou da 2.8 para a 2.9.1
 
@@ -350,7 +388,7 @@ este código:
 
 O arquivo `Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da
 planilha original (versão 2.0), em que a EP-1 foi escrita, e fica como
-histórico. As diferenças da 2.0 para a 2.9.1 que afetam a EP-1 são cinco: e-mail
+histórico. As diferenças da 2.0 para a 2.9.2 que afetam a EP-1 são cinco: e-mail
 aceita domínio de vários níveis; `delete_user` com senha errada responde 403
 "Senha incorreta" sem derrubar a sessão; alterar usuário sem mudar nada responde
 400 "Nenhum dado para atualizar"; o login checa e cria a sessão na mesma seção

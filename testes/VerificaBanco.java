@@ -107,6 +107,19 @@ public class VerificaBanco {
                 SessaoDAO.validarERenovar("f".repeat(64)) == null);
         confere("usuario tem sessao ativa (regra 3.5)", SessaoDAO.temSessaoAtiva(idJoao));
 
+        // --- quem esta logado: item h da EP-3, o painel do servidor ---
+        // O nome vem do banco, e nao escrito a mao: este usuario ja foi
+        // renomeado la em cima, e fixar "joao" aqui testaria o passado.
+        final String logado = UsuarioDAO.buscarPorId(idJoao).getUsuario();
+        confere("quem tem sessao aparece entre os logados",
+                SessaoDAO.usuariosLogados().stream()
+                        .anyMatch(l -> logado.equals(l[0])));
+        confere("a linha traz usuario, perfil, entrada e ultimo uso",
+                SessaoDAO.usuariosLogados().stream()
+                        .filter(l -> logado.equals(l[0]))
+                        .allMatch(l -> l.length == 4 && l[1] != null
+                                && l[2] != null && l[3] != null));
+
         // --- expiracao e renovacao (regra 3.3) ---
         SessaoDAO.envelhecerParaTeste(token, 20);
         confere("sessao de 20 min ainda vale", SessaoDAO.validarERenovar(token) != null);
@@ -115,6 +128,11 @@ public class VerificaBanco {
         SessaoDAO.envelhecerParaTeste(token, 31);
         confere("sessao de 31 min expirou", SessaoDAO.validarERenovar(token) == null);
         confere("sessao expirada nao bloqueia login novo", !SessaoDAO.temSessaoAtiva(idJoao));
+        // O painel do servidor nao pode mostrar quem expirou por inatividade:
+        // a linha 'ativa' continua TRUE no banco, mas o token ja nao vale.
+        confere("sessao expirada sai da lista de logados (item h)",
+                SessaoDAO.usuariosLogados().stream()
+                        .noneMatch(l -> logado.equals(l[0])));
 
         // --- logout (regra 3.4) ---
         String token2 = SessaoDAO.criar(idJoao);

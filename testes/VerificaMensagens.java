@@ -33,6 +33,14 @@ public class VerificaMensagens {
         acentuada("Sala ja cadastrada");
         acentuada("Capacidade menor que participantes de reservas ativas");
 
+        // --- mensagens da EP-3 ---
+        acentuada("Reserva nao encontrada");
+        acentuada("Dados da reserva em formato invalido");
+        acentuada("Sala ja reservada no periodo solicitado");
+        acentuada("Sala indisponivel para reserva");
+        acentuada("Horario fora do funcionamento da sala");
+        acentuada("Reserva ja encerrada");
+
         // Algumas mensagens do protocolo nao tem acento nenhum. A traducao
         // delas acrescenta so o ponto final -- mas tem que existir no mapa,
         // senao a frase apareceria na tela sem pontuacao, no meio de outras
@@ -41,6 +49,8 @@ public class VerificaMensagens {
         traduzida("Sala atualizada com sucesso");
         traduzida("Sala removida com sucesso");
         traduzida("Senha incorreta");
+        traduzida("Reserva realizada com sucesso");
+        traduzida("Reserva cancelada com sucesso");
 
         // Mensagem de outro grupo, fora do nosso mapa, e exibida como veio.
         String desconhecida = "Mensagem que nenhum grupo combinou";
@@ -64,6 +74,10 @@ public class VerificaMensagens {
                 Mensagens.dica("403", "admin_list_users_response") != null);
         confere("403 fora das admin_* nao cai na dica de perfil",
                 Mensagens.dica("403", "create_room_response") == null);
+        confere("409 no create_reservation sugere outro horario",
+                Mensagens.dica("409", "create_reservation_response") != null);
+        confere("403 no list_reservations explica o scope \"all\"",
+                Mensagens.dica("403", "list_reservations_response") != null);
 
         System.out.println("\n===== mensagens: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);

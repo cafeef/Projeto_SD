@@ -10,6 +10,8 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Acesso a tabela 'sessoes' -- emissao, validacao e invalidacao de tokens.
@@ -153,6 +155,43 @@ public final class SessaoDAO {
             }
         }
     }
+
+    /**
+     * Quem esta logado agora, para o painel do servidor (item h da EP-3).
+     *
+     * Logado e ter sessao ativa e dentro dos 30 minutos (regra 3.3): uma
+     * sessao que expirou por inatividade ainda tem 'ativa = TRUE' no banco,
+     * mas o token dela ja nao vale, e mostra-la seria mentir sobre quem esta
+     * no sistema. A mesma condicao de temSessaoAtiva, pela mesma razao.
+     *
+     * Devolve, por usuario: nome, perfil, quando entrou e o ultimo uso.
+     */
+    public static List<String[]> usuariosLogados() throws SQLException {
+        Timestamp limite = Timestamp.from(
+                Instant.now().minus(VALIDADE_MINUTOS, ChronoUnit.MINUTES));
+        List<String[]> logados = new ArrayList<>();
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT u.usuario, u.role, s.criado_em, s.ultimo_uso"
+                             + " FROM sessoes s JOIN usuarios u ON u.id = s.usuario_id"
+                             + " WHERE s.ativa = TRUE AND s.ultimo_uso >= ?"
+                             + " ORDER BY s.criado_em")) {
+            ps.setTimestamp(1, limite);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    logados.add(new String[] {
+                            rs.getString(1),
+                            rs.getString(2),
+                            FORMATO.format(rs.getTimestamp(3).toLocalDateTime()),
+                            FORMATO.format(rs.getTimestamp(4).toLocalDateTime())});
+                }
+            }
+        }
+        return logados;
+    }
+
+    private static final java.time.format.DateTimeFormatter FORMATO =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm:ss");
 
     /**
      * Token da sessao ativa do usuario, ou null se ele nao esta logado.

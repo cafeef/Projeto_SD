@@ -40,6 +40,7 @@ public class VerificaTelaDoCliente {
     static final String MARIA = "maria" + SUFIXO;
     static final String JOAO_NOVO = "joaosilva" + SUFIXO;
     static final String NOME_SALA = "Sala Teste " + SUFIXO;
+    static final String SALA_RESERVA = "Sala Reserva " + SUFIXO;
 
     public static void main(String[] args) throws Exception {
         int porta = Integer.parseInt(args[0]);
@@ -106,12 +107,14 @@ public class VerificaTelaDoCliente {
         });
         limparDialogos();
         clicar(botao("Entrar"));
-        confere("login do administrador", esperar(() -> {
-            JTabbedPane abas = (JTabbedPane) ler("abasSessao");
-            return abas.getTabCount() == 3;
-        }));
+        // Espera pelo NOME da aba, e nao pela quantidade: contar abas faria
+        // este teste quebrar a cada aba nova, culpando o login por isso.
+        confere("login do administrador",
+                esperar(() -> nomesDasAbas().contains("Salas")));
         confere("a aba Usuarios aparece para administrador",
                 nomesDasAbas().contains("Usuários"));
+        confere("a aba Reservas aparece na sessao",
+                nomesDasAbas().contains("Reservas"));
 
         // ======================= CLIENTE, item a) =======================
         aba("Usuários");
@@ -247,6 +250,101 @@ public class VerificaTelaDoCliente {
         confere("g) a sala sai dos registros",
                 esperar(() -> !textoDaTabela(tabelaSalas).contains(NOME_SALA)));
 
+        // ================== CLIENTE, itens b), c), d) e f) da EP-3 ==================
+        // Sala propria, criada depois do item g: a dos itens d a g foi
+        // removida, e uma reserva nela impediria justamente essa remocao.
+        aba("Salas");
+        String diaDaReserva = proximaTerca();
+        naEdt(() -> {
+            campoDe("painelSalas", "salaNome").setText(SALA_RESERVA);
+            campoDe("painelSalas", "salaCapacidade").setText("12");
+            campoDe("painelSalas", "salaLocal").setText("Bloco C");
+            campoDe("painelSalas", "salaRecursos").setText("tv");
+            campoDe("painelSalas", "salaHorarios").setText("3T1, 3T2, 3T3");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Cadastrar nova sala"));
+        confere("sala para as reservas criada",
+                esperar(() -> textoDaTabela(tabelaSalas).contains(SALA_RESERVA)));
+        confere("a sala de reserva esta na tabela", selecionar(tabelaSalas, SALA_RESERVA));
+        String idSala = valorSelecionado(tabelaSalas, 0);
+
+        aba("Reservas");
+        JTable tabelaReservas = tabelaDe("painelReservas");
+
+        // --- item b) verificar disponibilidade ---
+        naEdt(() -> {
+            campoDe("painelReservas", "dispSala").setText(idSala);
+            campoDe("painelReservas", "dispData").setText(diaDaReserva);
+            campoDe("painelReservas", "dispInicio").setText("13:00");
+            campoDe("painelReservas", "dispFim").setText("14:40");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
+        confere("b) usuario verifica a disponibilidade da sala",
+                esperar(() -> algumDialogo("LIVRE")));
+        confere("b) a tela avisa que a consulta nao segura a sala",
+                algumDialogo("não reserva"));
+
+        // --- item d) fazer a reserva ---
+        naEdt(() -> {
+            campoDe("painelReservas", "novaSala").setText(idSala);
+            campoDe("painelReservas", "novaData").setText(diaDaReserva);
+            campoDe("painelReservas", "novaInicio").setText("13:00");
+            campoDe("painelReservas", "novaFim").setText("14:40");
+            campoDe("painelReservas", "novaAssunto").setText("Reuniao de projeto");
+            campoDe("painelReservas", "novaParticipantes").setText("6");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Reservar sala"));
+        confere("d) usuario faz uma reserva com assunto e participantes",
+                esperar(() -> algumDialogo("Reserva realizada com sucesso")));
+
+        // --- item c) recuperar as proprias reservas ---
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Listar reservas"));
+        confere("c) usuario recupera suas reservas",
+                esperar(() -> textoDaTabela(tabelaReservas).contains(SALA_RESERVA)));
+        confere("c) a lista traz sala, dia e horario alocados",
+                textoDaTabela(tabelaReservas).contains(diaDaReserva)
+                        && textoDaTabela(tabelaReservas).contains("13:00")
+                        && textoDaTabela(tabelaReservas).contains("14:40")
+                        && textoDaTabela(tabelaReservas).contains("Reuniao de projeto"));
+
+        confere("c) a reserva esta selecionavel na tabela",
+                selecionar(tabelaReservas, SALA_RESERVA));
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Ver detalhes da reserva"));
+        confere("c) os detalhes da reserva abrem pelo id",
+                esperar(() -> algumDialogo("Reuniao de projeto")));
+
+        // Agora que existe reserva, a mesma consulta do item b muda de resposta.
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
+        confere("b) depois de reservada, a sala aparece indisponivel",
+                esperar(() -> algumDialogo("NÃO está")));
+
+        // --- item f) cancelar a reserva ---
+        confere("f) a reserva a cancelar esta selecionada",
+                selecionar(tabelaReservas, SALA_RESERVA));
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Cancelar reserva"));
+        confere("f) usuario cancela uma reserva ativa",
+                esperar(() -> algumDialogo("Reserva cancelada com sucesso")));
+        confere("f) a reserva sai da lista",
+                esperar(() -> !textoDaTabela(tabelaReservas).contains(SALA_RESERVA)));
+
+        // Limpeza: sem reserva ativa, a sala volta a poder ser removida.
+        aba("Salas");
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Listar salas"));
+        esperar(() -> textoDaTabela(tabelaSalas).contains(SALA_RESERVA));
+        selecionar(tabelaSalas, SALA_RESERVA);
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Excluir sala"));
+        confere("a sala das reservas e removida no fim",
+                esperar(() -> !textoDaTabela(tabelaSalas).contains(SALA_RESERVA)));
+
         // --- logout, fora das abas ---
         limparDialogos();
         clicar(botao("Sair (logout)"));
@@ -262,6 +360,32 @@ public class VerificaTelaDoCliente {
      * antes de comecar -- e o que esta suite quer exercitar sao as operacoes de
      * administrador, nao o cadastro, que as outras ja cobrem.
      */
+    /** O valor de uma coluna na linha selecionada da tabela. */
+    static String valorSelecionado(JTable tabela, int coluna) {
+        String[] valor = new String[1];
+        naEdt(() -> {
+            int linha = tabela.getSelectedRow();
+            valor[0] = linha < 0 ? null
+                    : String.valueOf(tabela.getModel().getValueAt(linha, coluna));
+        });
+        return valor[0];
+    }
+
+    /**
+     * A proxima terca-feira, que e o dia em que a sala de teste funciona.
+     *
+     * Calculada, e nao escrita a mao: uma data fixa vira passado depois de
+     * alguns meses, e a reserva passaria a ser recusada pela regra 9.3 -- a
+     * suite falharia sozinha, culpando a tela pela passagem do tempo.
+     */
+    static String proximaTerca() {
+        java.time.LocalDate dia = java.time.LocalDate.now().plusDays(1);
+        while (dia.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) {
+            dia = dia.plusDays(1);
+        }
+        return dia.toString();
+    }
+
     static void criarAlvos(int porta) throws Exception {
         try (java.net.Socket s = new java.net.Socket("127.0.0.1", porta)) {
             s.setSoTimeout(5000);

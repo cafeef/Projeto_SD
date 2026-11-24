@@ -23,6 +23,7 @@ public class VerificaCliente {
         recursos();
         horarios();
         requisicoesDeAdmin();
+        reservas();
 
         System.out.println("\n===== cliente: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
@@ -200,6 +201,76 @@ public class VerificaCliente {
                 "indisponível".equals(PainelSalas.disponibilidade("false")));
         confere("a tabela nao chama de ocupada o que nao tem reserva",
                 !"ocupada".equals(PainelSalas.disponibilidade("false")));
+    }
+
+    // -------------------------------------------------------------- reservas
+
+    static void reservas() {
+        System.out.println("\n-- reservas (EP-3) --");
+
+        // Item b: check_availability leva sala, dia e o recorte de horario.
+        JsonObject disp = PainelReservas.requisicaoDeDisponibilidade(TOKEN, " 7 ",
+                "2026-12-01", "13:00", "14:40");
+        confere("check_availability leva op, token, sala, data e horario",
+                disp.keySet().equals(java.util.Set.of(
+                        "op", "token", "room_id", "date", "start_time", "end_time")));
+        confere("os espacos digitados sao aparados",
+                "7".equals(texto(disp, "room_id")));
+
+        // Item d: create_reservation leva tambem assunto e participantes.
+        JsonObject nova = PainelReservas.requisicaoDeReserva(TOKEN, "7", "2026-12-01",
+                "13:00", "14:40", "Reuniao de projeto", "6");
+        confere("create_reservation leva as sete chaves do protocolo",
+                nova.keySet().equals(java.util.Set.of(
+                        "op", "token", "room_id", "date", "start_time", "end_time",
+                        "topic", "participants")));
+        confere("o assunto e o numero de participantes viajam como topic e participants",
+                "Reuniao de projeto".equals(texto(nova, "topic"))
+                        && "6".equals(texto(nova, "participants")));
+
+        // Item c: sem scope vale "mine", entao o campo so viaja quando e "all".
+        JsonObject minhas = PainelReservas.requisicaoDeListagem(TOKEN, false, "", "");
+        confere("list_reservations sem filtro leva so op e token",
+                minhas.keySet().equals(java.util.Set.of("op", "token")));
+        confere("sem a caixa marcada, o scope nao viaja", !minhas.has("scope"));
+
+        JsonObject todas = PainelReservas.requisicaoDeListagem(TOKEN, true, "", "");
+        confere("com a caixa marcada, o scope vai como \"all\"",
+                "all".equals(texto(todas, "scope")));
+
+        // Regra 2.14: filtro nao preenchido e OMITIDO, e nao mandado vazio --
+        // "" responderia 400, e a tela ficaria sem listagem nenhuma.
+        JsonObject filtrada = PainelReservas.requisicaoDeListagem(TOKEN, false,
+                "2026-12-01", " 7 ");
+        confere("os filtros preenchidos viajam, ja aparados",
+                "2026-12-01".equals(texto(filtrada, "date"))
+                        && "7".equals(texto(filtrada, "room_id")));
+        confere("filtro em branco nao vira chave vazia (regra 2.14)",
+                !PainelReservas.requisicaoDeListagem(TOKEN, false, "", "9").has("date"));
+
+        confere("read_reservation leva o reservation_id",
+                "27".equals(texto(PainelReservas.requisicaoDeLeitura(TOKEN, " 27 "),
+                        "reservation_id")));
+        confere("delete_reservation leva o reservation_id",
+                "delete_reservation".equals(texto(
+                        PainelReservas.requisicaoDeCancelamento(TOKEN, "27"), "op")));
+
+        // A frase do check_availability precisa dizer que a consulta NAO
+        // reserva: sem isso o usuario leria "livre" como garantia.
+        JsonObject respostaLivre = new JsonObject();
+        respostaLivre.addProperty("available", "true");
+        respostaLivre.addProperty("room_id", "7");
+        respostaLivre.addProperty("date", "2026-12-01");
+        respostaLivre.addProperty("start_time", "13:00");
+        respostaLivre.addProperty("end_time", "14:40");
+        String frase = PainelReservas.textoDaDisponibilidade(respostaLivre);
+        confere("a sala livre e anunciada como LIVRE", frase.contains("LIVRE"));
+        confere("a tela avisa que a consulta nao segura a sala",
+                frase.contains("não reserva"));
+
+        respostaLivre.addProperty("available", "false");
+        confere("a sala ocupada nao e anunciada como livre",
+                PainelReservas.textoDaDisponibilidade(respostaLivre).contains("NÃO está"));
     }
 
     // ----------------------------------------------------------------- admin
