@@ -49,11 +49,12 @@ import java.nio.charset.StandardCharsets;
  *   bookings                          as minhas reservas
  *   bookings &lt;data|-&gt; &lt;sala|-&gt; [all]
  *   booking &lt;id&gt;                le uma reserva
+ *   setbooking &lt;id&gt;;&lt;sala|-&gt;;&lt;data|-&gt;;&lt;inicio|-&gt;;&lt;fim|-&gt;;&lt;assunto|-&gt;;&lt;participantes|-&gt;
  *   unbook &lt;id&gt;                 cancela uma reserva
  *
  * O "all" do bookings pede o scope "all", que so o administrador pode usar.
- * Falta o comando de ALTERAR reserva: a planilha da EP-3 pede que a alteracao
- * mude tambem a sala e o dia, e a regra 9.10 proibe as duas chaves.
+ * No setbooking, "-" em qualquer campo quer dizer "nao alterar". Trocar de
+ * sala ou de dia so passou a existir na v2.10 do protocolo (regra 9.10).
  *
  * Os comandos de sala usam ';' entre os campos, e nao espaco, porque nome e
  * local tem espaco dentro. Os recursos vao separados por virgula, como lista
@@ -98,7 +99,8 @@ public class ClienteConsole {
             System.out.println("  EP-1: register, login, read, update, delete, logout");
             System.out.println("  EP-2: users, user, setuser, deluser,"
                     + " rooms, room, newroom, setroom, delroom");
-            System.out.println("  EP-3: avail, book, bookings, booking, unbook");
+            System.out.println("  EP-3: avail, book, bookings, booking,"
+                    + " setbooking, unbook");
             System.out.println("  raw <json>, /sair\n");
 
             String linha;
@@ -346,6 +348,21 @@ public class ClienteConsole {
                     return erroUso("booking <id>");
                 }
                 return comToken("read_reservation", "reservation_id", p[1]);
+
+            case "setbooking": {
+                String[] c = campos(linha, 7);
+                if (c == null) {
+                    return erroUso("setbooking <id>;<sala|->;<data|->;<inicio|->;"
+                            + "<fim|->;<assunto|->;<participantes|->");
+                }
+                // Regra 9.10: room_id e date sao opcionais, e "" diz o mesmo
+                // que omitir. Mandar as seis chaves sempre deixa a requisicao
+                // com um formato so, mais facil de conferir no terminal.
+                return comToken("update_reservation", "reservation_id", c[0],
+                        "room_id", vazioSeTraco(c[1]), "date", vazioSeTraco(c[2]),
+                        "start_time", vazioSeTraco(c[3]), "end_time", vazioSeTraco(c[4]),
+                        "topic", vazioSeTraco(c[5]), "participants", vazioSeTraco(c[6]));
+            }
 
             case "unbook":
                 if (p.length < 2) {

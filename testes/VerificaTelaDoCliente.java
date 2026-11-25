@@ -324,6 +324,52 @@ public class VerificaTelaDoCliente {
         confere("b) depois de reservada, a sala aparece indisponivel",
                 esperar(() -> algumDialogo("NÃO está")));
 
+        // --- item e) alterar a reserva ---
+        confere("e) a reserva a alterar esta selecionada",
+                selecionar(tabelaReservas, SALA_RESERVA));
+        naEdt(() -> {
+            // O formulario ja veio preenchido pela selecao; muda o assunto e
+            // o numero de participantes, e apaga o resto ("nao alterar").
+            campoDe("painelReservas", "novaSala").setText("");
+            campoDe("painelReservas", "novaData").setText("");
+            campoDe("painelReservas", "novaInicio").setText("");
+            campoDe("painelReservas", "novaFim").setText("");
+            campoDe("painelReservas", "novaAssunto").setText("Reuniao remarcada");
+            campoDe("painelReservas", "novaParticipantes").setText("8");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Salvar alterações na reserva"));
+        confere("e) usuario atualiza o topico e os participantes",
+                esperar(() -> algumDialogo("Reserva atualizada com sucesso")));
+        confere("e) os dados novos aparecem na lista",
+                esperar(() -> textoDaTabela(tabelaReservas).contains("Reuniao remarcada")
+                        && textoDaTabela(tabelaReservas).contains("8")));
+
+        // "UC libera a sala": adiantar o fim devolve o resto do horario sem
+        // cancelar a reserva (regra 9.3).
+        confere("e) a reserva continua selecionavel",
+                selecionar(tabelaReservas, SALA_RESERVA));
+        naEdt(() -> {
+            campoDe("painelReservas", "novaSala").setText("");
+            campoDe("painelReservas", "novaData").setText("");
+            campoDe("painelReservas", "novaInicio").setText("");
+            campoDe("painelReservas", "novaFim").setText("13:50");
+            campoDe("painelReservas", "novaAssunto").setText("");
+            campoDe("painelReservas", "novaParticipantes").setText("");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Salvar alterações na reserva"));
+        confere("e) usuario encurta a reserva e libera a sala",
+                esperar(() -> algumDialogo("Reserva atualizada com sucesso")));
+        naEdt(() -> {
+            campoDe("painelReservas", "dispInicio").setText("13:50");
+            campoDe("painelReservas", "dispFim").setText("14:40");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
+        confere("e) o horario liberado volta a aparecer livre",
+                esperar(() -> algumDialogo("LIVRE")));
+
         // --- item f) cancelar a reserva ---
         confere("f) a reserva a cancelar esta selecionada",
                 selecionar(tabelaReservas, SALA_RESERVA));

@@ -20,6 +20,7 @@ import servidor.handlers.ReadReservationHandler;
 import servidor.handlers.ReadRoomHandler;
 import servidor.handlers.ReadUserHandler;
 import servidor.handlers.RegisterHandler;
+import servidor.handlers.UpdateReservationHandler;
 import servidor.handlers.UpdateRoomHandler;
 import servidor.handlers.UpdateUserHandler;
 
@@ -153,12 +154,8 @@ public class ServidorConsole {
         dispatcher.registrar("create_reservation", new CreateReservationHandler());
         dispatcher.registrar("list_reservations", new ListReservationsHandler());
         dispatcher.registrar("read_reservation", new ReadReservationHandler());
+        dispatcher.registrar("update_reservation", new UpdateReservationHandler());
         dispatcher.registrar("delete_reservation", new DeleteReservationHandler());
-        // Falta o update_reservation: a planilha da EP-3 pede que a alteracao
-        // mude tambem a sala e o dia, e a regra 9.10 proibe as duas chaves.
-        // Enquanto a turma nao fecha o texto, nao da para escolher entre
-        // responder 400 (protocolo) e aceitar (planilha) sem desobedecer a um
-        // dos dois -- e a operacao que falta e so essa.
         return dispatcher;
     }
 

@@ -58,13 +58,15 @@ public class VerificaOperacoes {
                         && servidor.ServidorConsole.criarDispatcher().conhece("update_room")
                         && servidor.ServidorConsole.criarDispatcher().conhece("delete_room"));
 
-        confere("dispatcher de producao conhece as 5 operacoes de reserva da EP-3",
+        confere("dispatcher de producao conhece as operacoes de reserva da EP-3",
                 servidor.ServidorConsole.criarDispatcher().conhece("check_availability")
                         && servidor.ServidorConsole.criarDispatcher().conhece("create_reservation")
                         && servidor.ServidorConsole.criarDispatcher().conhece("list_reservations")
                         && servidor.ServidorConsole.criarDispatcher().conhece("read_reservation")
                         && servidor.ServidorConsole.criarDispatcher()
                                 .conhece("delete_reservation"));
+        confere("dispatcher de producao conhece o update_reservation (v2.10)",
+                servidor.ServidorConsole.criarDispatcher().conhece("update_reservation"));
 
         registrar();
         login();
@@ -1297,6 +1299,156 @@ public class VerificaOperacoes {
                             "reservation_id", reservaDoOutro)),
                     "delete_reservation_response", "200", "Reserva cancelada com sucesso");
 
+            // ----------------------------------------------- update_reservation
+            // Uma reserva nova para alterar, e uma segunda sala de destino.
+            String reservaE = campo(json(c.envia(reqReserva(tokenComum, sala, terca,
+                    "13:00", "13:50", "Reuniao curta", "4"))), "reservation_id");
+            confere("e) reserva criada para os testes de alteracao", reservaE != null);
+
+            String nomeDestino = "Sala " + nome();
+            String salaDestino = campo(json(adm.envia(reqSala("create_room", tokenAdmin,
+                    nomeDestino, "10", "Bloco D", "",
+                    "\"3T1\",\"3T2\",\"3T3\""))), "room_id");
+
+            checa("400 update_reservation sem nada para mudar (regra 2.13)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "", "", "")),
+                    "update_reservation_response", "400", "Nenhum dado para atualizar");
+
+            checa("404 update_reservation de reserva inexistente",
+                    c.envia(reqAlteraReserva(tokenComum, "999999", "", "", "", "15:30",
+                            "", "")),
+                    "update_reservation_response", "404", "Reserva nao encontrada");
+
+            // Regra 9.10: o 404 da sala vem depois do 404 da reserva.
+            checa("404 update_reservation com sala de destino inexistente (regra 9.10)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "999999", "", "", "",
+                            "", "")),
+                    "update_reservation_response", "404", "Sala nao encontrada");
+
+            // Regra 9.9: nem o admin altera reserva de terceiro -- so cancela.
+            checa("403 o admin nao altera reserva de outro (regra 9.9)",
+                    adm.envia(reqAlteraReserva(tokenAdmin, reservaE, "", "", "", "",
+                            "Mudado pelo admin", "")),
+                    "update_reservation_response", "403", "Permissao insuficiente");
+
+            checa("403 outro usuario comum nao altera a reserva",
+                    c2.envia(reqAlteraReserva(tokenOutro, reservaE, "", "", "", "",
+                            "Mudado por outro", "")),
+                    "update_reservation_response", "403", "Permissao insuficiente");
+
+            checa("400 participants acima da capacity na alteracao",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "", "", "99")),
+                    "update_reservation_response", "400",
+                    "Dados da reserva em formato invalido");
+
+            // Regra 9.13: esticar a propria reserva nao colide com ela mesma.
+            // Era o furo que a v2.10 fechou -- antes, 13:00-13:50 virando
+            // 13:00-14:40 batia contra o proprio registro e dava 409.
+            checa("e) 200 esticar a propria reserva nao da 409 (regra 9.13)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "14:40",
+                            "", "")),
+                    "update_reservation_response", "200", "Reserva atualizada com sucesso");
+
+            // Encurtar libera o resto do horario: e o "UC libera a sala" da
+            // planilha, sem cancelar a reserva inteira (regra 9.3).
+            checa("e) 200 encurtar a reserva libera o resto do horario",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "13:50",
+                            "", "")),
+                    "update_reservation_response", "200", "Reserva atualizada com sucesso");
+            confere("e) o horario liberado volta a aparecer livre",
+                    "true".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, sala, terca, "13:50", "14:40"))),
+                            "available")));
+
+            checa("e) 200 alterar assunto e participantes",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "",
+                            "Reuniao renomeada", "6")),
+                    "update_reservation_response", "200", "Reserva atualizada com sucesso");
+            JsonObject alterada = json(c.envia(req("read_reservation",
+                    "token", tokenComum, "reservation_id", reservaE)));
+            confere("e) o assunto e os participantes novos ficaram gravados",
+                    "Reuniao renomeada".equals(campo(alterada, "topic"))
+                            && "6".equals(campo(alterada, "participants")));
+
+            // Regra 9.10: trocar de DIA numa requisicao so.
+            String outraTerca = proximaTerca2();
+            checa("e) 200 trocar o dia da reserva (regra 9.10)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", outraTerca, "", "",
+                            "", "")),
+                    "update_reservation_response", "200", "Reserva atualizada com sucesso");
+            confere("e) a reserva mudou de dia",
+                    outraTerca.equals(campo(json(c.envia(req("read_reservation",
+                            "token", tokenComum, "reservation_id", reservaE))), "date")));
+            confere("e) o dia antigo voltou a ficar livre",
+                    "true".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, sala, terca, "13:00", "13:50"))),
+                            "available")));
+
+            // Regra 9.10 e 5.6: trocar de SALA, sob a tranca das duas.
+            checa("e) 200 trocar a sala da reserva (regras 9.10 e 5.6)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, salaDestino, "", "", "",
+                            "", "")),
+                    "update_reservation_response", "200", "Reserva atualizada com sucesso");
+            confere("e) a reserva mudou de sala",
+                    salaDestino.equals(campo(json(c.envia(req("read_reservation",
+                            "token", tokenComum, "reservation_id", reservaE))), "room_id")));
+            confere("e) o horario na sala de origem foi liberado (regra 5.6)",
+                    "true".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, sala, outraTerca,
+                                    "13:00", "13:50"))), "available")));
+            confere("e) o horario na sala de destino ficou ocupado",
+                    "false".equals(campo(json(c.envia(
+                            reqDisponibilidade(tokenComum, salaDestino, outraTerca,
+                                    "13:00", "13:50"))), "available")));
+
+            // Regra 8.4 na sala de DESTINO: a quarta nao esta nos slots dela.
+            checa("409 alterar para um dia em que a sala nao funciona (regra 8.4)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", quarta, "", "",
+                            "", "")),
+                    "update_reservation_response", "409",
+                    "Horario fora do funcionamento da sala");
+
+            // Conflito contra OUTRA reserva: a do outro usuario, que ocupa
+            // 14:40-15:30 na sala original... recriada aqui para o teste.
+            String reservaVizinha = campo(json(c2.envia(reqReserva(tokenOutro, salaDestino,
+                    outraTerca, "13:50", "14:40", "Vizinha", "2"))), "reservation_id");
+            confere("reserva vizinha criada", reservaVizinha != null);
+            checa("409 esticar por cima de OUTRA reserva (regra 5.4)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "14:40",
+                            "", "")),
+                    "update_reservation_response", "409",
+                    "Sala ja reservada no periodo solicitado");
+
+            // Regra 9.5: sala de destino inactive barra mudanca de horario,
+            // mas nao de assunto. O que conta e a chave ter vindo preenchida
+            // (regra 2.15), e nao o valor ter ficado diferente.
+            adm.envia(reqAtualizaSala(tokenAdmin, salaDestino, "", "", "", "", "inactive"));
+            checa("409 mudar horario em sala inactive (regra 9.5)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "13:50",
+                            "", "")),
+                    "update_reservation_response", "409", "Sala indisponivel para reserva");
+            checa("200 mudar so o assunto em sala inactive (regra 9.5)",
+                    c.envia(reqAlteraReserva(tokenComum, reservaE, "", "", "", "",
+                            "Mesmo assim", "")),
+                    "update_reservation_response", "200", "Reserva atualizada com sucesso");
+            adm.envia(reqAtualizaSala(tokenAdmin, salaDestino, "", "", "", "", "active"));
+
+            // Regra 9.14: o mesmo usuario pode ter duas reservas ao mesmo
+            // tempo, desde que em salas diferentes.
+            checa("201 mesmo usuario com reservas simultaneas em salas diferentes (9.14)",
+                    c.envia(reqReserva(tokenComum, sala, outraTerca, "13:00", "13:50",
+                            "Em outra sala", "2")),
+                    "create_reservation_response", "201", "Reserva realizada com sucesso");
+
+            // Limpeza das reservas destes testes.
+            c.envia(req("delete_reservation", "token", tokenComum,
+                    "reservation_id", reservaE));
+            if (reservaVizinha != null) {
+                c2.envia(req("delete_reservation", "token", tokenOutro,
+                        "reservation_id", reservaVizinha));
+            }
+            adm.envia(req("delete_room", "token", tokenAdmin, "room_id", salaDestino));
+
             // ------------------------------------- i) duas reservas simultaneas
             reservasSimultaneas(sala, terca, tokenComum, tokenOutro);
 
@@ -1378,6 +1530,25 @@ public class VerificaOperacoes {
         }
         confere("i) duas reservas simultaneas: uma 201 e uma 409 (regra 5.1, 5 rodadas)",
                 sempreUmaSo);
+    }
+
+    /**
+     * Monta um update_reservation com as seis chaves alteraveis.
+     *
+     * O 'room_id' e o 'date' sao opcionais desde a v2.10: aqui o vazio vira a
+     * chave com "", que e a outra forma de dizer "nao alterar" (regra 9.10).
+     */
+    static String reqAlteraReserva(String token, String reserva, String salaNova,
+                                   String diaNovo, String inicio, String fim,
+                                   String assunto, String participantes) {
+        return req("update_reservation", "token", token, "reservation_id", reserva,
+                "room_id", salaNova, "date", diaNovo, "start_time", inicio,
+                "end_time", fim, "topic", assunto, "participants", participantes);
+    }
+
+    /** A terca-feira seguinte a de proximaTerca(), para os testes de troca de dia. */
+    static String proximaTerca2() {
+        return proximoDia(java.time.DayOfWeek.TUESDAY, 1).plusWeeks(1).toString();
     }
 
     /** Monta um check_availability. */

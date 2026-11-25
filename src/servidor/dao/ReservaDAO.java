@@ -146,6 +146,39 @@ public final class ReservaDAO {
     }
 
     /**
+     * Regrava sala, dia, horario, assunto e participantes de uma reserva.
+     *
+     * Recebe os valores JA resolvidos -- o handler e quem combina "o que veio"
+     * com "o que ja estava" antes de chegar aqui. Um UPDATE com todas as
+     * colunas, em vez de montar o SET conforme o que mudou: a reserva e um
+     * registro pequeno, e regravar um valor igual ao que ja estava nao custa
+     * nada nem muda nada (regra 2.15).
+     *
+     * Nao confere conflito nem funcionamento: quem confere e o handler, dentro
+     * da tranca das salas envolvidas (regras 5.1 e 5.6).
+     *
+     * @return false se a reserva sumiu (cancelada por outra conexao) no meio
+     */
+    public static boolean atualizar(int id, int salaId, LocalDate dia, LocalTime inicio,
+                                    LocalTime fim, String assunto, int participantes)
+            throws SQLException {
+        try (Connection c = Banco.conexao();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE reservas SET sala_id = ?, dia = ?, inicio = ?, fim = ?,"
+                             + " assunto = ?, participantes = ?"
+                             + " WHERE id = ? AND ativa = TRUE")) {
+            ps.setInt(1, salaId);
+            ps.setDate(2, Date.valueOf(dia));
+            ps.setTime(3, Time.valueOf(inicio));
+            ps.setTime(4, Time.valueOf(fim));
+            ps.setString(5, assunto);
+            ps.setInt(6, participantes);
+            ps.setInt(7, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    /**
      * Cancela a reserva. Marca em vez de apagar: a reserva cancelada sai das
      * consultas, mas o registro continua, e com ele a resposta honesta a quem
      * perguntar pelo id dela depois.

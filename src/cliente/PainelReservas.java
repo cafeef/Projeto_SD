@@ -20,10 +20,22 @@ import java.awt.Dimension;
 /**
  * Aba de reservas: consultar disponibilidade, reservar, listar e cancelar.
  *
- * Cobre os itens b, c, d e f da EP-3. O item e (alterar reserva) nao esta
- * aqui: a planilha pede que a alteracao mude tambem a sala e o dia, e a regra
- * 9.10 do protocolo proibe as duas chaves no update_reservation. Enquanto a
- * turma nao decide, um botao de alterar so poderia obedecer a um dos dois.
+ * Cobre os itens b, c, d, e e f da EP-3.
+ *
+ * O mesmo formulario cria e altera. Clicar numa reserva da tabela copia os
+ * valores dela para os campos; dai "Reservar sala" cria uma nova e "Salvar
+ * alteracoes" muda a selecionada. Dois formularios iguais lado a lado seriam
+ * mais codigo para dizer a mesma coisa, e o campo que o usuario acabou de
+ * preencher num deles estaria vazio no outro.
+ *
+ * Campo apagado quer dizer "nao alterar" (regra 2.11), e nao "apagar": o
+ * formulario chega preenchido com a reserva, entao limpar um campo e o jeito
+ * de dizer "esse aqui, deixa como esta".
+ *
+ * Trocar de sala ou de dia so virou possivel na v2.10 do protocolo (regra
+ * 9.10). Ate a v2.9.2 as duas chaves respondiam 400, e a troca era cancelar e
+ * criar outra reserva -- o que perdia o id e podia deixar a pessoa sem reserva
+ * nenhuma se a sala nova ja tivesse dono naquele horario.
  *
  * A sala e identificada pelo ID, e nao por um combo de nomes, de proposito: o
  * ID e o que o protocolo manda no 'room_id', e a aba Salas ao lado mostra a
@@ -56,7 +68,7 @@ final class PainelReservas extends JPanel {
     private final JButton botaoCancelar = Estilo.botaoDestrutivo("Cancelar reserva");
 
     // --- nova reserva (item d) ---
-    private final JPanel grupoNova = Estilo.grupo("Nova reserva");
+    private final JPanel grupoNova = Estilo.grupo("Nova reserva ou alteração");
     private final JTextField novaSala = estreito(new JTextField(5));
     private final JTextField novaData = estreito(new JTextField(10));
     private final JTextField novaInicio = estreito(new JTextField(5));
@@ -64,6 +76,7 @@ final class PainelReservas extends JPanel {
     private final JTextField novaAssunto = estreito(new JTextField(26));
     private final JTextField novaParticipantes = estreito(new JTextField(4));
     private final JButton botaoReservar = Estilo.botaoPrincipal("Reservar sala");
+    private final JButton botaoSalvar = new JButton("Salvar alterações na reserva");
     private final JButton botaoLimparForm = new JButton("Limpar formulário");
 
     PainelReservas(Canal canal) {
@@ -108,6 +121,8 @@ final class PainelReservas extends JPanel {
         botoesNova.setLayout(new BoxLayout(botoesNova, BoxLayout.X_AXIS));
         botoesNova.add(botaoReservar);
         botoesNova.add(Box.createHorizontalStrut(8));
+        botoesNova.add(botaoSalvar);
+        botoesNova.add(Box.createHorizontalStrut(8));
         botoesNova.add(botaoLimparForm);
         botoesNova.add(Box.createHorizontalGlue());
 
@@ -121,7 +136,9 @@ final class PainelReservas extends JPanel {
                 .linhaCheia(botoesNova)
                 .dica("Assunto sem acento, até 60 caracteres.")
                 .dica("Participantes não pode passar da capacidade da sala.")
-                .dica("Clique numa reserva da tabela para copiá-la para cá.");
+                .dica("Clique numa reserva da tabela para copiá-la para cá e alterá-la.")
+                .dica("Ao alterar, campo apagado quer dizer \"deixa como está\".")
+                .dica("Adiantar o fim libera o resto do horário sem cancelar a reserva.");
 
         add(disponibilidade, BorderLayout.NORTH);
         add(lista, BorderLayout.CENTER);
@@ -167,6 +184,7 @@ final class PainelReservas extends JPanel {
         botaoDetalhes.setEnabled(habilitado);
         botaoCancelar.setEnabled(habilitado);
         botaoReservar.setEnabled(habilitado);
+        botaoSalvar.setEnabled(habilitado);
     }
 
     void limpar() {
@@ -187,6 +205,7 @@ final class PainelReservas extends JPanel {
         botaoDetalhes.addActionListener(e -> verDetalhes());
         botaoCancelar.addActionListener(e -> cancelar());
         botaoReservar.addActionListener(e -> reservar());
+        botaoSalvar.addActionListener(e -> salvar());
         botaoLimparForm.addActionListener(e -> {
             tabela.clearSelection();
             limparFormulario();
@@ -231,6 +250,29 @@ final class PainelReservas extends JPanel {
             canal.informar(resposta);
             if ("201".equals(campo(resposta, "status"))) {
                 limparFormulario();
+                listar(false);
+            }
+        });
+    }
+
+    /**
+     * Item e: altera a reserva selecionada com o que esta no formulario.
+     *
+     * Trocar de sala, de dia, de horario, de assunto ou de numero de
+     * participantes -- tudo numa requisicao so (regra 9.10). Adiantar o fim e
+     * o "UC libera a sala" da planilha: a sala volta a ficar livre no resto do
+     * horario sem a reserva ser cancelada.
+     */
+    private void salvar() {
+        String id = idSelecionado();
+        if (id == null) {
+            return;
+        }
+        canal.trocar(requisicaoDeAlteracao(canal.token(), id, novaSala.getText(),
+                novaData.getText(), novaInicio.getText(), novaFim.getText(),
+                novaAssunto.getText(), novaParticipantes.getText()), resposta -> {
+            canal.informar(resposta);
+            if ("200".equals(campo(resposta, "status"))) {
                 listar(false);
             }
         });
@@ -348,6 +390,30 @@ final class PainelReservas extends JPanel {
                                           String fim, String assunto, String participantes) {
         JsonObject req = Canal.requisicao("create_reservation");
         req.addProperty("token", token);
+        req.addProperty("room_id", sala.trim());
+        req.addProperty("date", data.trim());
+        req.addProperty("start_time", inicio.trim());
+        req.addProperty("end_time", fim.trim());
+        req.addProperty("topic", assunto.trim());
+        req.addProperty("participants", participantes.trim());
+        return req;
+    }
+
+    /**
+     * Monta o update_reservation.
+     *
+     * Todas as seis chaves alteraveis viajam, vazias quando o usuario apagou o
+     * campo -- "" e a forma de dizer "nao alterar" (regra 2.11). O 'room_id' e
+     * o 'date' sao opcionais no protocolo, mas manda-los vazios diz a mesma
+     * coisa que omiti-los e deixa a requisicao com um formato so, mais facil
+     * de conferir no terminal durante a avaliacao.
+     */
+    static JsonObject requisicaoDeAlteracao(String token, String reservationId, String sala,
+                                            String data, String inicio, String fim,
+                                            String assunto, String participantes) {
+        JsonObject req = Canal.requisicao("update_reservation");
+        req.addProperty("token", token);
+        req.addProperty("reservation_id", reservationId.trim());
         req.addProperty("room_id", sala.trim());
         req.addProperty("date", data.trim());
         req.addProperty("start_time", inicio.trim());

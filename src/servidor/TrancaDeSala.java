@@ -53,6 +53,28 @@ public final class TrancaDeSala {
         }
     }
 
+    /**
+     * Roda a acao com DUAS salas trancadas -- a troca de sala do
+     * update_reservation (regra 5.6).
+     *
+     * A ordem e sempre crescente por room_id, e isso nao e detalhe de estilo:
+     * duas trocas em sentidos opostos (A->B e B->A) acontecendo ao mesmo tempo
+     * travariam uma na outra para sempre se cada uma pegasse as trancas na
+     * ordem que lhe conviesse. Ordenar e o que garante que nunca ha espera
+     * circular.
+     *
+     * Salas iguais viram uma tranca so. O ReentrantLock aceitaria o segundo
+     * lock(), mas pedir duas vezes a mesma tranca so confundiria quem le.
+     */
+    public static <T> T comAsSalasTrancadas(int salaA, int salaB, Acao<T> acao) throws Exception {
+        if (salaA == salaB) {
+            return comASalaTrancada(salaA, acao);
+        }
+        int primeira = Math.min(salaA, salaB);
+        int segunda = Math.max(salaA, salaB);
+        return comASalaTrancada(primeira, () -> comASalaTrancada(segunda, acao));
+    }
+
     /** Esquece todas as trancas. So para os testes comecarem limpos. */
     public static void limpar() {
         TRANCAS.clear();

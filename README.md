@@ -12,23 +12,10 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 |---|---|---|
 | **EP-1** | Autenticação e CRUD do próprio cadastro | ✅ completa |
 | **EP-2** | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
-| EP-3 | CRUD de reservas e controle de concorrência | 🔸 falta só o `update_reservation` |
+| **EP-3** | CRUD de reservas e controle de concorrência | ✅ completa, servidor e cliente |
 
-Tudo o que está entregue segue a **v2.9.2** do protocolo. No testador oficial
-são **96 testes passando de 102**, e as seis falhas restantes são todas do
-`update_reservation` — a operação que falta, e que falta de propósito.
-
-### Por que o `update_reservation` não está implementado
-
-A planilha da EP-3 pede, no item e)/m), que a alteração de uma reserva mude
-**"sala, dia e faixa de horário, tópico da reunião, número de participantes"**.
-A regra 9.10 do protocolo proíbe as chaves `room_id` e `date` nessa operação:
-para trocar de sala ou de dia, cancela-se e cria-se outra reserva.
-
-São exigências contraditórias, e nenhuma implementação satisfaz as duas. Em vez
-de escolher sozinho e quebrar a interoperabilidade com os outros grupos, o
-código deixa a operação de fora e documenta o motivo. As outras cinco operações
-de reserva estão completas, no servidor e no cliente.
+Tudo o que está entregue segue a **v2.10.0** do protocolo, e o testador oficial
+passa em **105 de 105**, sem nenhum teste pulado.
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
 
@@ -38,7 +25,7 @@ Operações implementadas, com todos os códigos de status previstos no protocol
   `admin_delete_user`, `create_room`, `list_rooms`, `read_room`, `update_room`,
   `delete_room`
 - **EP-3** — `check_availability`, `create_reservation`, `list_reservations`,
-  `read_reservation`, `delete_reservation`
+  `read_reservation`, `update_reservation`, `delete_reservation`
 
 O poder de administrador sai de uma **whitelist de tokens** (regra 3.14), e não
 do perfil gravado no banco nem de qualquer campo da requisição. Um token entra
@@ -70,12 +57,24 @@ sala, e a tela do cliente diz isso em palavras. Entre a consulta e a reserva,
 outra pessoa pode chegar antes — o `409` depois de um `"true"` não é
 inconsistência, é a diferença entre perguntar e reservar.
 
-Cancelar uma reserva a **marca** em vez de apagar a linha, mas para o protocolo
-ela deixa de existir: cancelar ou ler de novo responde `404`. O administrador
-**cancela** reserva de terceiro (regra 3.14), mas não **altera** (regra 9.9) —
-liberar uma sala é administração; mudar o assunto da reunião de alguém é se
-passar por essa pessoa.
+Alterar uma reserva muda **sala, dia, horário, assunto e participantes numa
+requisição só** (regra 9.10, a partir da v2.10). Duas sutilezas vivem aí: a
+reserva **não conflita consigo mesma** — esticar as 13:00–13:50 para 13:00–14:40
+é `200`, não `409` (regra 9.13) —, e trocar de sala roda sob a trava das **duas**
+salas, sempre em ordem crescente de `room_id`, senão duas trocas em sentidos
+opostos travariam uma na outra para sempre (regra 5.6).
 
+**Adiantar o fim de uma reserva libera o resto do horário sem cancelá-la.** É o
+"UC libera a sala" da planilha. Jogar o fim para trás do relógio, porém,
+responde `400`: alterar não é encerrar, e para encerrar existe o
+`delete_reservation` (regra 9.3).
+
+Só o **dono** altera, nem o administrador (regra 9.9) — que, no entanto,
+**cancela** reserva de terceiro. A assimetria é deliberada: liberar uma sala é
+administração; mudar o assunto da reunião de alguém é se passar por essa pessoa.
+
+Cancelar uma reserva a **marca** em vez de apagar a linha, mas para o protocolo
+ela deixa de existir: cancelar ou ler de novo responde `404`. 
 A tela do servidor mostra **quem está logado**, atualizada a cada três segundos
 (item h da EP-3). Conexão aberta e sessão são coisas diferentes: o contador de
 clientes conta sockets, a tabela conta pessoas — e uma sessão sobrevive ao
@@ -205,10 +204,10 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 583 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 619 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
-cliente monta, banco de dados, transporte e erros de protocolo, as vinte
-operações já implementadas, a construção das telas, e a tela do cliente
+cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
+operações do protocolo, a construção das telas, e a tela do cliente
 dirigida por cliques. No fim, dispara três clientes simultâneos contra o mesmo
 servidor.
 
@@ -237,6 +236,11 @@ igual.
 Sobe o servidor e roda contra ele o testador que a turma mantém junto do
 protocolo, que confere cada resposta contra a especificação. É o mesmo programa
 usado no teste de interoperabilidade.
+
+Antes de chamar o testador, o script semeia uma sala extra
+(`scripts/semear-conformidade.mjs`): o teste de troca de sala procura **outra**
+sala ativa que funcione no mesmo horário, e num banco recém-criado ele se pula —
+justamente o caminho das duas travas, o mais intrincado da EP-3.
 
 Depende do Node e do repositório do protocolo clonado ao lado deste; sem um dos
 dois, o script avisa e sai. Por isso ele é separado do `testar.sh`, que roda só
@@ -367,7 +371,7 @@ lib/               Bibliotecas, versionadas para o projeto rodar sem baixar nada
 
 A especificação é mantida pela turma e hoje vive em um documento AsyncAPI
 (`asyncapi.yaml`) no repositório `protocolo-reserva-salas`. Este código está em
-conformidade com a **versão 2.9.2**.
+conformidade com a **versão 2.10.0**.
 
 ### O que mudou da 2.8 para a 2.9.1
 
@@ -388,7 +392,7 @@ este código:
 
 O arquivo `Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da
 planilha original (versão 2.0), em que a EP-1 foi escrita, e fica como
-histórico. As diferenças da 2.0 para a 2.9.2 que afetam a EP-1 são cinco: e-mail
+histórico. As diferenças da 2.0 para a 2.10.0 que afetam a EP-1 são cinco: e-mail
 aceita domínio de vários níveis; `delete_user` com senha errada responde 403
 "Senha incorreta" sem derrubar a sessão; alterar usuário sem mudar nada responde
 400 "Nenhum dado para atualizar"; o login checa e cria a sessão na mesma seção

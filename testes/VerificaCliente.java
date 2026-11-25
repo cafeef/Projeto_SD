@@ -248,6 +248,25 @@ public class VerificaCliente {
         confere("filtro em branco nao vira chave vazia (regra 2.14)",
                 !PainelReservas.requisicaoDeListagem(TOKEN, false, "", "9").has("date"));
 
+        // Item e: a alteracao leva as seis chaves alteraveis, inclusive as
+        // duas que so existem desde a v2.10 (regra 9.10).
+        JsonObject alteracao = PainelReservas.requisicaoDeAlteracao(TOKEN, " 27 ", "9",
+                "2026-12-08", "", "13:50", "", "4");
+        confere("update_reservation leva as oito chaves do protocolo",
+                alteracao.keySet().equals(java.util.Set.of(
+                        "op", "token", "reservation_id", "room_id", "date",
+                        "start_time", "end_time", "topic", "participants")));
+        confere("a troca de sala e de dia viaja (regra 9.10, v2.10)",
+                "9".equals(texto(alteracao, "room_id"))
+                        && "2026-12-08".equals(texto(alteracao, "date")));
+        // Campo apagado vira "", que o protocolo le como "nao alterar" -- e
+        // nao some da requisicao, para o formato ser sempre o mesmo.
+        confere("campo apagado viaja como \"\" (nao alterar)",
+                "".equals(texto(alteracao, "start_time"))
+                        && "".equals(texto(alteracao, "topic")));
+        confere("o reservation_id e aparado",
+                "27".equals(texto(alteracao, "reservation_id")));
+
         confere("read_reservation leva o reservation_id",
                 "27".equals(texto(PainelReservas.requisicaoDeLeitura(TOKEN, " 27 "),
                         "reservation_id")));

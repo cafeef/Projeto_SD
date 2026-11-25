@@ -46,4 +46,8 @@ if ! grep -q "escutando" /tmp/conformidade-servidor.log 2> /dev/null; then
     exit 1
 fi
 
+# Uma sala extra para o teste de troca de sala ter destino (regras 9.10 e 5.6).
+# Sem ela o testador pula justamente o caminho das duas trancas.
+node scripts/semear-conformidade.mjs 127.0.0.1 "$PORTA"
+
 node "$TESTADOR" 127.0.0.1 "$PORTA"
