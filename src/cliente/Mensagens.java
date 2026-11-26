@@ -108,7 +108,17 @@ final class Mensagens {
                     + " altere o estado da sala para \"inactive\".";
         }
         if ("400".equals(status) && "list_rooms_response".equals(op)) {
-            return "Data, início e fim precisam ser informados juntos, ou nenhum dos três.";
+            // Sem hora, "a sala está livre no dia 30?" não tem resposta única:
+            // ela pode estar livre de manhã e ocupada à tarde. Quem responde
+            // pelo dia inteiro é o read_room sem room_id (regra 9.16).
+            return "Data, início e fim precisam ser informados juntos, ou nenhum dos três."
+                    + "\nPara ver o dia inteiro sem escolher horário,"
+                    + " use \"Ver o dia de todas as salas\".";
+        }
+        if ("400".equals(status) && "check_availability_response".equals(op)) {
+            return "Informe a sala, a data, o início e o fim."
+                    + "\nPara ver um dia inteiro sem escolher sala nem horário,"
+                    + " use a aba Salas: \"Ver o dia de todas as salas\".";
         }
         if ("400".equals(status) && "create_reservation_response".equals(op)) {
             return "Confira a data, os horários de aula e se o grupo cabe na sala."

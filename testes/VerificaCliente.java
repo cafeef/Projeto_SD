@@ -26,6 +26,7 @@ public class VerificaCliente {
         reservas();
         seletores();
         horarioQuePassou();
+        diaInteiro();
 
         System.out.println("\n===== cliente: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
@@ -292,6 +293,27 @@ public class VerificaCliente {
         respostaLivre.addProperty("available", "false");
         confere("a sala ocupada nao e anunciada como livre",
                 PainelReservas.textoDaDisponibilidade(respostaLivre).contains("NÃO está"));
+
+        // Consultar o passado e valido (regra 9.4) e o servidor responde 200
+        // com "available": "true" -- mas aquilo nao da para reservar (regra
+        // 9.3). Sem o aviso, o "LIVRE" convida a tentar e levar um 400.
+        JsonObject ontem = new JsonObject();
+        ontem.addProperty("available", "true");
+        ontem.addProperty("room_id", "2");
+        ontem.addProperty("date", java.time.LocalDate.now().minusDays(1).toString());
+        ontem.addProperty("start_time", "13:00");
+        ontem.addProperty("end_time", "13:50");
+        String textoDeOntem = PainelReservas.textoDaDisponibilidade(ontem);
+        confere("consulta sobre ontem avisa que nao da para reservar",
+                textoDeOntem.contains("não é possível reservar"));
+        confere("e fala no passado: \"estava livre\", nao \"esta livre\"",
+                textoDeOntem.contains("estava LIVRE") && !textoDeOntem.contains("está LIVRE"));
+        confere("sobre ontem nao vem a dica de que outra pessoa pode reservar antes",
+                !textoDeOntem.contains("antes de você"));
+
+        ontem.addProperty("available", "false");
+        confere("ocupada no passado tambem fala no passado",
+                PainelReservas.textoDaDisponibilidade(ontem).contains("NÃO estava"));
     }
 
     // ------------------------------------------- listas de escolha de horário
@@ -402,6 +424,77 @@ public class VerificaCliente {
         return true;
     }
 
+    // --------------------------------- o dia inteiro de todas as salas (9.16)
+
+    /**
+     * O read_room SEM room_id, que e a operacao do "ver o dia inteiro".
+     *
+     * Nem o check_availability nem o list_rooms respondem essa pergunta: o
+     * primeiro exige sala e horario, o segundo exige o trio completo (regra
+     * 9.11). Confundir os tres foi o que fez a tela parecer quebrada.
+     */
+    static void diaInteiro() {
+        System.out.println("\n-- dia inteiro de todas as salas (regra 9.16) --");
+
+        JsonObject resposta = new JsonObject();
+        resposta.addProperty("count", "2");
+        com.google.gson.JsonArray salas = new com.google.gson.JsonArray();
+        salas.add(salaComAgenda("3", "Lab IV", "20", "active", "3T1", "livre", null));
+        salas.add(salaComAgenda("2", "Lab V", "35", "inactive", "3T2", "indisponivel",
+                "joao"));
+        resposta.add("rooms", salas);
+
+        String texto = PainelSalas.diaInteiroPorExtenso(resposta, "2027-01-05");
+        confere("o texto diz quantas salas e de que dia",
+                texto.startsWith("2 salas em 2027-01-05:"));
+        confere("cada sala aparece com nome, id e capacidade",
+                texto.contains("Lab IV (ID 3, 20 lugares)")
+                        && texto.contains("Lab V (ID 2, 35 lugares, inativa)"));
+        confere("a agenda de cada sala vem junto",
+                texto.contains("3T1") && texto.contains("3T2"));
+        confere("quem reservou aparece na linha do horario",
+                texto.contains("reservada por joao"));
+
+        JsonObject vazia = new JsonObject();
+        vazia.add("rooms", new com.google.gson.JsonArray());
+        confere("banco sem sala nenhuma nao quebra a tela",
+                "Nenhuma sala cadastrada.".equals(
+                        PainelSalas.diaInteiroPorExtenso(vazia, "2027-01-05")));
+        confere("resposta sem 'rooms' tambem nao quebra",
+                PainelSalas.diaInteiroPorExtenso(new JsonObject(), "2027-01-05") != null);
+
+        // As duas dicas que apontam para o botao certo quando o servidor
+        // recusa a pergunta errada.
+        confere("o 400 do list_rooms aponta o \"dia de todas as salas\"",
+                Mensagens.dica("400", "list_rooms_response")
+                        .contains("dia de todas as salas"));
+        confere("o 400 do check_availability aponta o mesmo caminho",
+                Mensagens.dica("400", "check_availability_response")
+                        .contains("dia de todas as salas"));
+    }
+
+    static JsonObject salaComAgenda(String id, String nome, String capacidade, String estado,
+                                    String slot, String status, String dono) {
+        JsonObject sala = new JsonObject();
+        sala.addProperty("room_id", id);
+        sala.addProperty("name", nome);
+        sala.addProperty("capacity", capacidade);
+        sala.addProperty("room_status", estado);
+        sala.addProperty("date", "2027-01-05");
+        com.google.gson.JsonArray agenda = new com.google.gson.JsonArray();
+        JsonObject horario = new JsonObject();
+        horario.addProperty("slot", slot);
+        horario.addProperty("start_time", "13:00");
+        horario.addProperty("end_time", "13:50");
+        horario.addProperty("slot_status", status);
+        if (dono != null) {
+            horario.addProperty("user", dono);
+        }
+        agenda.add(horario);
+        sala.add("agenda", agenda);
+        return sala;
+    }
+
     // ------------------------------------------- aviso de horário que passou
 
     /**
@@ -435,6 +528,16 @@ public class VerificaCliente {
         confere("campo vazio nao vira aviso de passado",
                 PainelReservas.avisoDePassado("", "13:00") == null
                         && PainelReservas.avisoDePassado("2027-01-01", "") == null);
+
+        // A coluna "Disponível" da tabela de salas: no passado, o verbo muda.
+        confere("sem filtro de passado, a coluna diz \"livre\"",
+                "livre".equals(PainelSalas.disponibilidade("true", false)));
+        confere("com filtro de passado, a coluna diz \"estava livre\"",
+                "estava livre".equals(PainelSalas.disponibilidade("true", true)));
+        confere("e \"estava indisponível\" quando ocupada",
+                "estava indisponível".equals(PainelSalas.disponibilidade("false", true)));
+        confere("sem 'available' continua travessao, passado ou nao",
+                "—".equals(PainelSalas.disponibilidade(null, true)));
     }
 
     // ----------------------------------------------------------------- admin

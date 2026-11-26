@@ -50,6 +50,7 @@ final class PainelSalas extends JPanel {
     private final JTable tabela = Estilo.tabela("ID", "Nome", "Capacidade", "Local",
             "Recursos", "Horários", "Estado", "Disponível");
     private final JButton botaoDetalhes = new JButton("Ver detalhes da sala");
+    private final JButton botaoDiaInteiro = new JButton("Ver o dia de todas as salas");
 
     // --- formulario de administracao ---
     private final JPanel grupoAdmin = Estilo.grupo("Administração de salas");
@@ -102,12 +103,14 @@ final class PainelSalas extends JPanel {
                 .campo("Data (AAAA-MM-DD):", linhaFiltros)
                 .linhaCheia(botoesFiltro)
                 .dica("Data, início e fim vão juntos, ou nenhum dos três.")
-                .dica("Só com os três o servidor diz se a sala está livre.");
+                .dica("Só com os três o servidor diz se a sala está livre.")
+                .dica("Para ver um dia inteiro sem escolher horário,"
+                        + " preencha a data e use \"Ver o dia de todas as salas\".");
 
         JScrollPane rolagem = new JScrollPane(tabela);
         rolagem.setPreferredSize(new Dimension(640, 180));
 
-        JPanel acoesTabela = linha(botaoDetalhes);
+        JPanel acoesTabela = linha(botaoDetalhes, botaoDiaInteiro);
 
         JPanel centro = new JPanel(new BorderLayout(0, 8));
         centro.add(rolagem, BorderLayout.CENTER);
@@ -183,6 +186,7 @@ final class PainelSalas extends JPanel {
     void habilitar(boolean habilitado) {
         botaoListar.setEnabled(habilitado);
         botaoDetalhes.setEnabled(habilitado);
+        botaoDiaInteiro.setEnabled(habilitado);
         botaoCadastrar.setEnabled(habilitado);
         botaoSalvar.setEnabled(habilitado);
         botaoExcluir.setEnabled(habilitado);
@@ -205,6 +209,7 @@ final class PainelSalas extends JPanel {
             listar();
         });
         botaoDetalhes.addActionListener(e -> verDetalhes());
+        botaoDiaInteiro.addActionListener(e -> verDiaInteiro());
         botaoCadastrar.addActionListener(e -> cadastrar());
         botaoSalvar.addActionListener(e -> salvar());
         botaoExcluir.addActionListener(e -> excluir());
@@ -235,8 +240,37 @@ final class PainelSalas extends JPanel {
      *        dado errado quando na verdade deu certo.
      */
     private void listar(boolean avisarSeVazio) {
-        JsonObject req = requisicaoDeListagem(canal.token(), filtroData.getText(),
-                filtroInicio.hora(), filtroFim.hora(), filtroCapacidade.getText());
+        String data = filtroData.getText().trim();
+        String inicio = filtroInicio.hora();
+        String fim = filtroFim.hora();
+        int pedacos = (data.isEmpty() ? 0 : 1) + (inicio.isEmpty() ? 0 : 1)
+                + (fim.isEmpty() ? 0 : 1);
+
+        // O trio data+início+fim é tudo ou nada (regra 9.11): sem hora, "a
+        // sala está livre no dia 30?" não tem resposta única, porque ela pode
+        // estar livre de manhã e ocupada à tarde. Mandar o trio pela metade é
+        // 400 garantido, e a tela sabe disso antes de mandar.
+        if (pedacos != 0 && pedacos != 3) {
+            if (avisarSeVazio) {
+                // Clique de quem está consultando: explica e aponta o caminho.
+                JOptionPane.showMessageDialog(this,
+                        "Data, início e fim vão juntos — ou nenhum dos três.\n\n"
+                                + "Para ver um dia inteiro sem escolher horário,"
+                                + " use \"Ver o dia de todas as salas\".",
+                        "Filtros incompletos", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            // Recarga automática (depois de salvar ou excluir): lista todas as
+            // salas, omitindo o trio incompleto. Travar aqui deixaria a tabela
+            // com dados velhos por causa de um filtro que o usuário nem
+            // terminou de preencher.
+            data = "";
+            inicio = "";
+            fim = "";
+        }
+
+        JsonObject req = requisicaoDeListagem(canal.token(), data, inicio, fim,
+                filtroCapacidade.getText());
 
         canal.trocar(req, resposta -> {
             if (!"200".equals(campo(resposta, "status"))) {
@@ -268,13 +302,107 @@ final class PainelSalas extends JPanel {
                     // a sala selecionada sem ter de traduzir de volta.
                     horariosResumidos(sala),
                     "active".equals(campo(sala, "room_status")) ? "ativa" : "inativa",
-                    disponibilidade(campo(sala, "available"))});
+                    // Só há "passado" a marcar quando a pergunta tinha hora:
+                    // sem o trio o servidor nem manda 'available'.
+                    disponibilidade(campo(sala, "available"),
+                            Passado.jaPassou(filtroData.getText(), filtroInicio.hora()))});
         }
         if (modelo.getRowCount() == 0 && avisarSeVazio) {
             JOptionPane.showMessageDialog(this,
                     "Nenhuma sala atende aos filtros informados.",
                     "Consulta de salas", JOptionPane.INFORMATION_MESSAGE);
         }
+    }
+
+    /**
+     * O dia inteiro de TODAS as salas, numa requisição só (regra 9.16, v2.11).
+     *
+     * Usa o `read_room` SEM `room_id`, que é a operação feita para isso. Nem o
+     * `check_availability` nem o `list_rooms` servem aqui, e por motivo:
+     *
+     *   - `check_availability` exige `room_id`, `start_time` e `end_time` —
+     *     ele responde "esta sala está livre NESTE recorte?", que é uma
+     *     pergunta sobre uma sala só;
+     *   - `list_rooms` aceita a data, mas só junto com início e fim (regra
+     *     9.11): sem hora, "a sala está livre no dia 30?" não tem resposta
+     *     única, porque ela pode estar livre de manhã e ocupada à tarde.
+     *
+     * O `read_room` sem `room_id` responde outra pergunta, e é a que interessa
+     * aqui: "como está o dia inteiro, sala por sala, horário por horário?".
+     */
+    private void verDiaInteiro() {
+        String data = filtroData.getText().trim();
+        if (data.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Preencha a data nos filtros para ver o dia inteiro.",
+                    "Agenda do dia", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        JsonObject req = Canal.requisicao("read_room");
+        req.addProperty("token", canal.token());
+        // Sem 'room_id' de propósito: é a chave ausente que pede todas as
+        // salas. Mandá-la vazia seria 400 (regra 9.16).
+        req.addProperty("date", data);
+
+        canal.trocar(req, resposta -> {
+            if (!"200".equals(campo(resposta, "status"))) {
+                canal.informar(resposta);
+                return;
+            }
+            mostrarTexto("Agenda de " + data, diaInteiroPorExtenso(resposta, data));
+        });
+    }
+
+    /**
+     * A resposta do read_room sem room_id, em texto.
+     *
+     * Uma sala por bloco, com a agenda de cada uma. Sala que não funciona
+     * naquele dia aparece dizendo isso, em vez de sumir: saber que a sala
+     * existe e não abre naquele dia é informação, e a ausência dela faria
+     * parecer que a sala foi removida.
+     */
+    static String diaInteiroPorExtenso(JsonObject resposta, String data) {
+        if (!resposta.has("rooms") || !resposta.get("rooms").isJsonArray()) {
+            return "O servidor não devolveu salas.";
+        }
+        JsonArray salas = resposta.getAsJsonArray("rooms");
+        if (salas.size() == 0) {
+            return "Nenhuma sala cadastrada.";
+        }
+        StringBuilder texto = new StringBuilder(salas.size() == 1
+                ? "1 sala em " + data + ":"
+                : salas.size() + " salas em " + data + ":");
+        for (JsonElement e : salas) {
+            JsonObject sala = e.getAsJsonObject();
+            texto.append("\n\n").append(campo(sala, "name"))
+                    .append(" (ID ").append(campo(sala, "room_id")).append(", ")
+                    .append(campo(sala, "capacity")).append(" lugares")
+                    .append("active".equals(campo(sala, "room_status"))
+                            ? ")" : ", inativa)");
+            String agenda = agendaPorExtenso(sala);
+            // agendaPorExtenso abre com duas quebras para o diálogo de uma
+            // sala só; aqui as linhas já vêm separadas pelo bloco acima.
+            texto.append(agenda.replaceFirst("^\n\n", "\n"));
+        }
+        return texto.toString();
+    }
+
+    /**
+     * Um diálogo com rolagem, para texto que pode ficar longo.
+     *
+     * O showMessageDialog com uma String cresce com o conteúdo e, com muitas
+     * salas, passaria da altura da tela -- os botões ficariam fora do
+     * alcance. Com a área de rolagem o diálogo tem tamanho fixo.
+     */
+    private void mostrarTexto(String titulo, String texto) {
+        javax.swing.JTextArea area = new javax.swing.JTextArea(texto, 20, 52);
+        area.setEditable(false);
+        area.setCaretPosition(0);
+        area.setFont(new java.awt.Font(java.awt.Font.MONOSPACED, java.awt.Font.PLAIN,
+                area.getFont().getSize()));
+        JOptionPane.showMessageDialog(this, new JScrollPane(area), titulo,
+                JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void verDetalhes() {
@@ -423,7 +551,7 @@ final class PainelSalas extends JPanel {
      * Entrega 2. Agenda vazia não é falha: quer dizer que a sala não funciona
      * naquele dia da semana.
      */
-    private static String agendaPorExtenso(JsonObject resposta) {
+    static String agendaPorExtenso(JsonObject resposta) {
         if (!resposta.has("agenda") || !resposta.get("agenda").isJsonArray()) {
             return "\n\nInforme uma data nos filtros para ver a agenda do dia.";
         }
@@ -432,14 +560,22 @@ final class PainelSalas extends JPanel {
             return "\n\nAgenda de " + campo(resposta, "date")
                     + ": a sala não funciona nesse dia.";
         }
+        String data = campo(resposta, "date");
         StringBuilder sb = new StringBuilder("\n\nAgenda de ")
-                .append(campo(resposta, "date")).append(":");
+                .append(data).append(":");
         for (JsonElement e : agenda) {
             JsonObject h = e.getAsJsonObject();
+            boolean passou = Passado.jaPassou(data, campo(h, "start_time"));
             sb.append("\n  ").append(campo(h, "slot")).append("  ")
                     .append(campo(h, "start_time")).append('-').append(campo(h, "end_time"))
                     .append("  ")
                     .append("livre".equals(campo(h, "slot_status")) ? "livre" : "indisponível");
+            // Regra 9.15: a agenda do servidor não olha a hora, de propósito --
+            // horário que passou e não foi reservado continua "livre". Quem
+            // avisa é o cliente, senão a agenda oferece o que não dá reservar.
+            if (passou) {
+                sb.append(" (já passou)");
+            }
             String dono = campo(h, "user");
             if (dono != null) {
                 sb.append(" — reservada por ").append(dono);
@@ -629,10 +765,23 @@ final class PainelSalas extends JPanel {
      * reservou quando existe reserva.
      */
     static String disponibilidade(String available) {
+        return disponibilidade(available, false);
+    }
+
+    /**
+     * @param diaPassado true quando o filtro perguntou sobre um horário que
+     *                   já passou: aí a resposta é sobre o que FOI, e não
+     *                   sobre o que dá para reservar agora (regras 9.3 e 9.4)
+     */
+    static String disponibilidade(String available, boolean diaPassado) {
         if (available == null) {
             return "—";
         }
-        return "true".equals(available) ? "livre" : "indisponível";
+        boolean livre = "true".equals(available);
+        if (diaPassado) {
+            return livre ? "estava livre" : "estava indisponível";
+        }
+        return livre ? "livre" : "indisponível";
     }
 
     private static void acrescentarSeInformado(JsonObject req, String chave, String valor) {

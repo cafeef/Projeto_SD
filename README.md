@@ -91,6 +91,29 @@ que vem depois do início escolhido, o que elimina o `400` mais fácil de
 cometer. Os horários de funcionamento da sala também viraram uma lista, com o
 dia e a hora por extenso, no lugar de digitar `2M1, 2M2`.
 
+**Três perguntas parecidas, três operações diferentes** — confundi-las é o que
+faz a tela parecer quebrada:
+
+| Pergunta | Operação | Precisa de |
+|---|---|---|
+| Esta sala está livre neste horário? | `check_availability` | sala + dia + início + fim |
+| Que salas servem neste horário? | `list_rooms` | o trio dia/início/fim, ou nenhum |
+| Como está o dia inteiro, sala por sala? | `read_room` sem `room_id` | só a data |
+
+O trio do `list_rooms` é tudo ou nada (regra 9.11) porque, sem hora, *"a sala
+está livre no dia 30?"* não tem resposta única: ela pode estar livre de manhã e
+ocupada à tarde. Quem responde pelo dia inteiro é o `read_room` sem `room_id`
+(regra 9.16), no botão **"Ver o dia de todas as salas"**. O cliente confere o
+trio **antes** de mandar e aponta esse botão, em vez de colher um `400` que não
+diz o que fazer.
+
+**Consultar o passado é válido** (regra 9.4) e o servidor responde de verdade —
+mas o que ele responde é sobre o que **foi**, não sobre o que dá para reservar
+(regra 9.3). Então a tela muda o verbo: *"a sala **estava** LIVRE"*, com o aviso
+de que não é possível reservar. Sem isso, o "LIVRE" de ontem convidaria a tentar
+e colher um `400`. A agenda marca `(já passou)` pelo mesmo motivo — a regra 9.15
+diz, com todas as letras, que esse cuidado é do cliente.
+
 **Reservar num horário que já passou é avisado pelo cliente**, antes de mandar.
 O protocolo tem uma mensagem de formato por operação, então o servidor responde
 "Dados da reserva em formato invalido" tanto para um campo mal preenchido
@@ -223,7 +246,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 673 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 707 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
 operações do protocolo, a construção das telas, e a tela do cliente

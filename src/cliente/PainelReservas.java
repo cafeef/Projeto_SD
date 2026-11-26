@@ -219,6 +219,19 @@ final class PainelReservas extends JPanel {
 
     /** Item b: pergunta se a sala está livre naquele recorte. */
     private void verificar() {
+        // O check_availability exige sala, dia E horário (os seis campos são
+        // required no protocolo): ele responde "esta sala está livre NESTE
+        // recorte?". Sem isso o servidor responde "Dados em formato
+        // invalido", que não diz o que falta nem onde está o que a pessoa
+        // queria -- o dia inteiro de todas as salas fica na aba Salas, em
+        // "Ver o dia de todas as salas" (regra 9.16).
+        if (dispSala.getText().isBlank() || dispData.getText().isBlank()
+                || dispInicio.hora().isEmpty() || dispFim.hora().isEmpty()) {
+            canal.erro("Para consultar a disponibilidade, informe a sala, a data,"
+                    + " o início e o fim.\n\nPara ver um dia inteiro sem escolher sala"
+                    + " nem horário, use a aba Salas:\n\"Ver o dia de todas as salas\".");
+            return;
+        }
         canal.trocar(requisicaoDeDisponibilidade(canal.token(), dispSala.getText(),
                 dispData.getText(), dispInicio.hora(), dispFim.hora()), resposta -> {
             if (!"200".equals(campo(resposta, "status"))) {
@@ -410,24 +423,7 @@ final class PainelReservas extends JPanel {
      * de respondê-lo é o servidor, com as regras dele.
      */
     static String avisoDePassado(String data, String inicio) {
-        if (data == null || data.isBlank() || inicio == null || inicio.isBlank()) {
-            return null;
-        }
-        java.time.LocalDate dia;
-        java.time.LocalTime hora;
-        try {
-            dia = java.time.LocalDate.parse(data.trim());
-            hora = java.time.LocalTime.parse(inicio.trim());
-        } catch (java.time.format.DateTimeParseException e) {
-            return null;
-        }
-        if (dia.atTime(hora).isAfter(java.time.LocalDateTime.now())) {
-            return null;
-        }
-        return dia.isBefore(java.time.LocalDate.now())
-                ? "Esse dia já passou: " + dia + ". Escolha uma data de hoje em diante."
-                : "Esse horário de hoje já começou (" + inicio
-                        + "). Escolha uma aula que ainda vai começar, ou outro dia.";
+        return Passado.aviso(data, inicio);
     }
 
     // ------------------------------------------------- montagem das requisições
@@ -517,15 +513,38 @@ final class PainelReservas extends JPanel {
 
     /** A resposta do check_availability em uma frase, com o dia por extenso. */
     static String textoDaDisponibilidade(JsonObject resposta) {
-        String quando = campo(resposta, "date") + ", das " + campo(resposta, "start_time")
-                + " às " + campo(resposta, "end_time");
-        return "true".equals(campo(resposta, "available"))
-                ? "A sala " + campo(resposta, "room_id") + " está LIVRE em " + quando
-                        + ".\n\nA consulta não reserva a sala — outra pessoa pode"
-                        + " reservá-la antes de você."
-                : "A sala " + campo(resposta, "room_id") + " NÃO está disponível em "
-                        + quando + ".\n\nPode ser reserva de outra pessoa, horário fora do"
-                        + " funcionamento da sala, ou sala inativa.";
+        String data = campo(resposta, "date");
+        String inicio = campo(resposta, "start_time");
+        String quando = data + ", das " + inicio + " às " + campo(resposta, "end_time");
+        boolean livre = "true".equals(campo(resposta, "available"));
+
+        // Consultar o passado é válido (regra 9.4) e o servidor responde de
+        // verdade -- mas no passado o verbo é outro: a sala ESTAVA livre.
+        // Dizer "está" sobre ontem convidaria a reservar o que não dá.
+        String aviso = Passado.naoDaParaReservar(data, inicio);
+
+        StringBuilder texto = new StringBuilder("A sala ")
+                .append(campo(resposta, "room_id"));
+        if (livre) {
+            texto.append(aviso == null ? " está LIVRE em " : " estava LIVRE em ");
+        } else {
+            texto.append(aviso == null
+                    ? " NÃO está disponível em "
+                    : " NÃO estava disponível em ");
+        }
+        texto.append(quando).append(".\n\n");
+
+        if (aviso != null) {
+            // O aviso vem antes do resto: é o que muda o que fazer agora.
+            texto.append(aviso);
+        } else if (livre) {
+            texto.append("A consulta não reserva a sala — outra pessoa pode"
+                    + " reservá-la antes de você.");
+        } else {
+            texto.append("Pode ser reserva de outra pessoa, horário fora do"
+                    + " funcionamento da sala, ou sala inativa.");
+        }
+        return texto.toString();
     }
 
     /** O read_reservation em texto, para a caixa de detalhes. */

@@ -227,6 +227,41 @@ public class VerificaTelaDoCliente {
                 esperar(() -> algumDialogo(NOME_SALA)
                         && algumDialogo("12 lugares")));
 
+        // Regra 9.16: o dia inteiro de todas as salas, com a data preenchida
+        // e sem escolher sala nem horário. É o que nem o check_availability
+        // nem o list_rooms conseguem responder.
+        naEdt(() -> {
+            campoDe("painelSalas", "filtroData").setText("2026-12-01");
+            hora("painelSalas", "filtroInicio").selecionarHora("");
+            hora("painelSalas", "filtroFim").selecionarHora("");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Ver o dia de todas as salas"));
+        confere("e) o dia inteiro de todas as salas abre com a data pedida",
+                esperar(() -> algumDialogo("2026-12-01")));
+        confere("e) e traz a sala de teste com a agenda dela",
+                algumDialogo(NOME_SALA));
+
+        // "Listar salas" só com a data é o trio pela metade (regra 9.11). A
+        // tela explica e aponta o botão certo, em vez de mandar e colher
+        // "Filtros em formato inválido" do servidor.
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Listar salas"));
+        confere("e) listar com a data sozinha explica o trio",
+                esperar(() -> algumDialogo("vão juntos")));
+        confere("e) e aponta o \"dia de todas as salas\"",
+                algumDialogo("dia de todas as salas"));
+        confere("e) sem mandar a requisição quebrada ao servidor",
+                !algumDialogo("Filtros em formato"));
+
+        // Sem data, o botão explica o que falta em vez de mandar e dar 400.
+        naEdt(() -> campoDe("painelSalas", "filtroData").setText(""));
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Ver o dia de todas as salas"));
+        confere("e) sem data, a tela pede a data",
+                esperar(() -> algumDialogo("Preencha a data")));
+        naEdt(() -> campoDe("painelSalas", "filtroData").setText("2026-12-01"));
+
         // ======================= CLIENTE, item f) =======================
         selecionar(tabelaSalas, NOME_SALA);
         naEdt(() -> {
@@ -285,6 +320,19 @@ public class VerificaTelaDoCliente {
                 esperar(() -> algumDialogo("LIVRE")));
         confere("b) a tela avisa que a consulta nao segura a sala",
                 algumDialogo("não reserva"));
+
+        // Consultar um dia que já passou é válido (regra 9.4) e o servidor
+        // responde "available": "true" -- mas aquilo não dá para reservar
+        // (regra 9.3). Sem o aviso, o "LIVRE" convida a tentar e levar 400.
+        naEdt(() -> campoDe("painelReservas", "dispData").setText(
+                java.time.LocalDate.now().minusDays(1).toString()));
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
+        confere("b) consultar um dia passado avisa que não dá para reservar",
+                esperar(() -> algumDialogo("não é possível reservar")));
+        confere("b) e fala no passado, não como se ainda desse",
+                algumDialogo("estava"));
+        naEdt(() -> campoDe("painelReservas", "dispData").setText(diaDaReserva));
 
         // --- item d) fazer a reserva ---
         naEdt(() -> {
@@ -524,6 +572,13 @@ public class VerificaTelaDoCliente {
         for (Component x : c.getComponents()) {
             if (x instanceof JLabel l && l.getText() != null) {
                 sb.append(l.getText()).append(' ');
+            }
+            // Diálogo com área de rolagem -- o do "dia de todas as salas" --
+            // guarda o texto numa JTextArea, e não numa JLabel. Sem este ramo
+            // o vigia veria uma janela vazia e o teste culparia a tela por um
+            // limite do próprio teste.
+            if (x instanceof javax.swing.JTextArea a && a.getText() != null) {
+                sb.append(a.getText()).append(' ');
             }
             if (x instanceof Container k) {
                 sb.append(textosDe(k));
