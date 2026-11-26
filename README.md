@@ -271,7 +271,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 682 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 693 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
 operações do protocolo, a construção das telas, e a tela do cliente

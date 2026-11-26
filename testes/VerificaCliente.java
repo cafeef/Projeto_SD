@@ -28,6 +28,7 @@ public class VerificaCliente {
         horarioQuePassou();
         diaInteiro();
         salasComHorarioLivre();
+        blocosLegiveis();
 
         System.out.println("\n===== cliente: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
@@ -523,6 +524,122 @@ public class VerificaCliente {
         agenda.add(horario);
         sala.add("agenda", agenda);
         return sala;
+    }
+
+    // ------------------------------------------------ legibilidade dos blocos
+
+    /**
+     * Todo bloco da grade precisa ser LEGIVEL, em qualquer tema do sistema.
+     *
+     * O bug que isto tranca: o GTK pinta o botao com o tema e ignora o
+     * setBackground, entao o bloco escolhido ficava com texto branco sobre
+     * fundo branco -- invisivel. A correcao e desligar o preenchimento do
+     * Look and Feel (setContentAreaFilled(false)) e deixar o proprio
+     * componente pintar (setOpaque(true)).
+     *
+     * Testar cor renderizada seria fragil; o que se testa aqui e a condicao
+     * que fazia a cor sumir, mais o contraste entre texto e fundo.
+     */
+    static void blocosLegiveis() {
+        System.out.println("\n-- legibilidade dos blocos da grade --");
+        String amanha = java.time.LocalDate.now().plusDays(1).toString();
+
+        GradeDoDia grade = new GradeDoDia(g -> { });
+        JsonObject resposta = new JsonObject();
+        com.google.gson.JsonArray salas = new com.google.gson.JsonArray();
+        salas.add(salaComAgenda("3", "Lab IV", "20", "active", "3T1", "livre", null));
+        salas.add(salaComAgenda("2", "Lab V", "35", "active", "3T1", "indisponivel", "joao"));
+        resposta.add("rooms", salas);
+        grade.mostrar(resposta, amanha, false);
+
+        java.util.List<javax.swing.JButton> botoes = botoesDe(grade);
+        confere("a grade desenhou blocos", !botoes.isEmpty());
+        confere("nenhum bloco deixa o tema pintar por cima da cor",
+                botoes.stream().allMatch(b -> b.isOpaque() && !b.isContentAreaFilled()));
+        confere("todo bloco tem texto legivel sobre o proprio fundo",
+                botoes.stream().allMatch(b -> legivel(b.getForeground(), b.getBackground())));
+
+        // E o estado que quebrou: o bloco escolhido.
+        javax.swing.JButton livre = botoes.stream()
+                .filter(b -> "livre".equals(b.getText()))
+                .findFirst().orElse(null);
+        confere("ha um bloco livre para escolher", livre != null);
+        if (livre != null) {
+            livre.doClick();
+            confere("o bloco escolhido muda de texto", "escolhido".equals(livre.getText()));
+            confere("e continua legivel depois de escolhido",
+                    legivel(livre.getForeground(), livre.getBackground()));
+            confere("o escolhido nao e branco no branco",
+                    !livre.getForeground().equals(livre.getBackground()));
+        }
+
+        // A grade de horarios da sala tem o mesmo risco.
+        GradeDeSlots slots = new GradeDeSlots();
+        slots.selecionar("3T1");
+        java.util.List<javax.swing.AbstractButton> blocos = marcaveisDe(slots);
+        confere("a grade de horarios desenhou blocos", !blocos.isEmpty());
+        confere("os blocos de horario tambem pintam o proprio fundo",
+                blocos.stream().allMatch(b -> b.isOpaque() && !b.isContentAreaFilled()));
+        confere("o horario marcado aparece com \"✓\"",
+                blocos.stream().anyMatch(b -> "✓".equals(b.getText())));
+        confere("o horario marcado fica legivel",
+                blocos.stream()
+                        .filter(b -> "✓".equals(b.getText()))
+                        .allMatch(b -> legivel(b.getForeground(), b.getBackground())));
+    }
+
+    /**
+     * Contraste suficiente entre texto e fundo (razao de luminancia >= 3).
+     *
+     * E o limite que a WCAG pede para texto grande. Branco no branco da 1.0,
+     * que era exatamente o caso do bloco escolhido antes da correcao.
+     */
+    static boolean legivel(java.awt.Color texto, java.awt.Color fundo) {
+        if (texto == null || fundo == null) {
+            return false;
+        }
+        double a = luminancia(texto);
+        double b = luminancia(fundo);
+        double clara = Math.max(a, b);
+        double escura = Math.min(a, b);
+        return (clara + 0.05) / (escura + 0.05) >= 3.0;
+    }
+
+    static double luminancia(java.awt.Color c) {
+        double[] canais = {c.getRed() / 255.0, c.getGreen() / 255.0, c.getBlue() / 255.0};
+        for (int i = 0; i < 3; i++) {
+            canais[i] = canais[i] <= 0.03928
+                    ? canais[i] / 12.92
+                    : Math.pow((canais[i] + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * canais[0] + 0.7152 * canais[1] + 0.0722 * canais[2];
+    }
+
+    /** Os blocos marcaveis (JToggleButton) de uma grade. */
+    static java.util.List<javax.swing.AbstractButton> marcaveisDe(java.awt.Container c) {
+        java.util.List<javax.swing.AbstractButton> achados = new java.util.ArrayList<>();
+        for (java.awt.Component x : c.getComponents()) {
+            if (x instanceof javax.swing.JToggleButton b) {
+                achados.add(b);
+            }
+            if (x instanceof java.awt.Container k) {
+                achados.addAll(marcaveisDe(k));
+            }
+        }
+        return achados;
+    }
+
+    static java.util.List<javax.swing.JButton> botoesDe(java.awt.Container c) {
+        java.util.List<javax.swing.JButton> achados = new java.util.ArrayList<>();
+        for (java.awt.Component x : c.getComponents()) {
+            if (x instanceof javax.swing.JButton b && b.getBorder() != null) {
+                achados.add(b);
+            }
+            if (x instanceof java.awt.Container k) {
+                achados.addAll(botoesDe(k));
+            }
+        }
+        return achados;
     }
 
     // ------------------------------------------- aviso de horário que passou

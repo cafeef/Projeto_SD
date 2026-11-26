@@ -8,6 +8,7 @@ import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JToggleButton;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -34,6 +35,10 @@ import java.util.TreeMap;
 final class GradeDeSlots extends JPanel {
 
     private static final long serialVersionUID = 1L;
+
+    private static final Color MARCADO = new Color(0x2E, 0x7D, 0x32);
+    private static final Color VAZIO = Color.WHITE;
+    private static final Color BORDA_VAZIO = new Color(0xDD, 0xDD, 0xDD);
 
     /** O botão de cada horário, por código ("3T1"). Ordenado para o texto sair estável. */
     private final transient Map<String, JToggleButton> blocos = new TreeMap<>();
@@ -73,6 +78,19 @@ final class GradeDeSlots extends JPanel {
                 bloco.setToolTipText(Horarios.porExtenso(slot) + "  (" + slot + ")");
                 bloco.setMargin(new Insets(0, 0, 0, 0));
                 bloco.setPreferredSize(new Dimension(58, 22));
+                // Mínimo igual ao preferido: quando a janela aperta, o
+                // GridBagLayout recua para os tamanhos MÍNIMOS, e o mínimo de
+                // um botão sem texto é um quadradinho. A grade inteira
+                // encolhia até virar pontinhos ilegíveis.
+                bloco.setMinimumSize(bloco.getPreferredSize());
+                bloco.setFocusPainted(false);
+                // Sem estas duas linhas o tema do sistema pinta o botão e
+                // ignora o setBackground: no GTK o marcado fica num cinza
+                // claríssimo, quase igual ao desmarcado.
+                bloco.setContentAreaFilled(false);
+                bloco.setOpaque(true);
+                bloco.addItemListener(e -> pintar(bloco));
+                pintar(bloco);
                 blocos.put(slot, bloco);
                 c.gridx = d + 1;
                 add(bloco, c);
@@ -88,12 +106,28 @@ final class GradeDeSlots extends JPanel {
         add(new JLabel(), c);
     }
 
+    /**
+     * Pinta um bloco conforme esteja marcado.
+     *
+     * A cor não é o único sinal: o marcado também ganha um "✓" e a borda mais
+     * forte. Num tema que pinte os botões à sua maneira, ou para quem não
+     * distingue as cores, o símbolo continua dizendo o que é.
+     */
+    private static void pintar(JToggleButton bloco) {
+        boolean marcado = bloco.isSelected();
+        bloco.setText(marcado ? "✓" : "");
+        bloco.setBackground(marcado ? MARCADO : VAZIO);
+        bloco.setForeground(marcado ? Color.WHITE : Color.BLACK);
+        bloco.setBorder(BorderFactory.createLineBorder(marcado ? MARCADO.darker() : BORDA_VAZIO));
+    }
+
     /** Cabeçalho clicável: faz a marcação em lote de uma linha ou coluna. */
     private static JButton cabecalho(String texto, String dica, Runnable acao) {
         JButton b = new JButton(texto);
         b.setToolTipText(dica);
         b.setMargin(new Insets(0, 4, 0, 4));
         b.setPreferredSize(new Dimension(88, 22));
+        b.setMinimumSize(b.getPreferredSize());
         b.setFont(b.getFont().deriveFont(b.getFont().getSize() - 1f));
         b.setForeground(Estilo.CINZA);
         b.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));

@@ -52,6 +52,7 @@ final class GradeDoDia extends JPanel {
     private static final Color FUNDO_OCUPADA = new Color(0xFF, 0xEB, 0xEE);
     private static final Color BORDA_OCUPADA = new Color(0xEF, 0x9A, 0x9A);
     private static final Color FUNDO_MORTA = new Color(0xF5, 0xF5, 0xF5);
+    private static final Color BORDA_MORTA = new Color(0xDD, 0xDD, 0xDD);
     private static final Color FUNDO_ESCOLHIDO = new Color(0x19, 0x76, 0xD2);
 
     /** Um bloco da grade: sala, aula e o que ele é naquele dia. */
@@ -223,15 +224,28 @@ final class GradeDoDia extends JPanel {
         JButton b = new JButton();
         b.setMargin(new Insets(0, 2, 0, 2));
         b.setPreferredSize(new Dimension(118, 26));
+        // Ver a nota em GradeDeSlots: sem o mínimo, a grade encolhe até
+        // virar pontinhos quando a janela aperta.
+        b.setMinimumSize(b.getPreferredSize());
         b.setFont(b.getFont().deriveFont(b.getFont().getSize() - 1f));
         b.setFocusPainted(false);
+        // Sem estas duas linhas o GTK pinta o botão com o tema do sistema e
+        // IGNORA o setBackground: a grade inteira sai branca, só com a cor na
+        // borda, e o bloco escolhido fica com texto branco sobre branco --
+        // ilegível. Desligando o preenchimento do Look and Feel, quem pinta o
+        // fundo é o próprio componente, e aí a cor vale em qualquer tema.
+        b.setContentAreaFilled(false);
+        b.setOpaque(true);
 
         if (horario == null) {
-            // A sala não abre nessa aula: bloco morto, sem clique.
+            // A sala não abre nessa aula.
+            String explicacao = campo(sala, "name") + " não funciona neste horário.";
             b.setText("—");
-            b.setEnabled(false);
             b.setBackground(FUNDO_MORTA);
-            b.setToolTipText(campo(sala, "name") + " não funciona neste horário.");
+            b.setBorder(BorderFactory.createLineBorder(BORDA_MORTA));
+            b.setForeground(Estilo.CINZA);
+            b.setToolTipText(explicacao);
+            b.addActionListener(e -> explicar(explicacao));
             return b;
         }
 
@@ -244,21 +258,27 @@ final class GradeDoDia extends JPanel {
 
         if (!livreNoServidor) {
             String dono = campo(horario, "user");
+            String explicacao = dono == null
+                    ? campo(sala, "name") + " está indisponível neste horário"
+                            + " (sala inativa ou reservada)."
+                    : campo(sala, "name") + " está reservada por " + dono
+                            + " das " + inicio + " às " + fim + ".";
             b.setText(dono == null ? "ocupada" : dono);
-            b.setToolTipText(dono == null
-                    ? "Indisponível (sala inativa ou reservada)."
-                    : "Reservada por " + dono + ".");
+            b.setToolTipText(explicacao);
             b.setBackground(FUNDO_OCUPADA);
             b.setBorder(BorderFactory.createLineBorder(BORDA_OCUPADA));
-            b.setEnabled(false);
+            b.addActionListener(e -> explicar(explicacao));
             return b;
         }
         if (passou) {
+            String explicacao = "Este horário já passou — não é possível reservar"
+                    + " (regra 9.3). Escolha um dia ou uma aula que ainda vai começar.";
             b.setText("já passou");
-            b.setToolTipText("Este horário já passou — não é possível reservar.");
+            b.setToolTipText(explicacao);
             b.setBackground(FUNDO_MORTA);
+            b.setBorder(BorderFactory.createLineBorder(BORDA_MORTA));
             b.setForeground(Estilo.CINZA);
-            b.setEnabled(false);
+            b.addActionListener(e -> explicar(explicacao));
             return b;
         }
 
@@ -319,11 +339,21 @@ final class GradeDoDia extends JPanel {
         blocos.forEach(b -> b.escolhido = false);
     }
 
+    /**
+     * Repinta os blocos livres conforme a escolha.
+     *
+     * A cor não é o único sinal: o texto muda junto, e a borda do escolhido
+     * fica mais grossa. Num tema que pinte os botões à sua maneira, ou para
+     * quem não distingue as cores, a palavra continua dizendo o que é.
+     */
     private void pintar() {
         for (Bloco b : blocos) {
             b.botao.setBackground(b.escolhido ? FUNDO_ESCOLHIDO : FUNDO_LIVRE);
             b.botao.setForeground(b.escolhido ? Color.WHITE : Color.BLACK);
             b.botao.setText(b.escolhido ? "escolhido" : "livre");
+            b.botao.setBorder(b.escolhido
+                    ? BorderFactory.createLineBorder(FUNDO_ESCOLHIDO.darker(), 2)
+                    : BorderFactory.createLineBorder(BORDA_LIVRE));
         }
     }
 
@@ -335,6 +365,19 @@ final class GradeDoDia extends JPanel {
             }
         }
         return lista;
+    }
+
+    /**
+     * Diz por que aquele bloco não dá para escolher.
+     *
+     * Antes esses blocos eram botões DESABILITADOS. Desabilitar tinha dois
+     * defeitos: o GTK repinta o botão desabilitado com o tema e engole a cor
+     * de fundo -- a grade saía toda branca --, e um botão cinza não explica
+     * nada a quem clica nele esperando uma resposta. Agora eles respondem.
+     */
+    private void explicar(String texto) {
+        javax.swing.JOptionPane.showMessageDialog(this, texto, "Este horário",
+                javax.swing.JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void avisar() {
@@ -387,6 +430,7 @@ final class GradeDoDia extends JPanel {
     private static JLabel rotulo(String texto, int largura) {
         JLabel l = new JLabel(texto == null ? "" : texto);
         l.setPreferredSize(new Dimension(largura, 24));
+        l.setMinimumSize(l.getPreferredSize());
         l.setFont(l.getFont().deriveFont(java.awt.Font.BOLD, l.getFont().getSize() - 1f));
         l.setForeground(Estilo.CINZA);
         return l;
