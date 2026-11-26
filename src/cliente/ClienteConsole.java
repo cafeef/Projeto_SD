@@ -266,8 +266,8 @@ public class ClienteConsole {
                 req.addProperty("name", c[0]);
                 req.addProperty("capacity", c[1]);
                 req.addProperty("location", c[2]);
-                req.add("resources", PainelSalas.recursosDeTexto(c[3]));
-                req.add("slots", PainelSalas.slotsDeTexto(c[4]));
+                req.add("resources", PainelAdminSalas.recursosDeTexto(c[3]));
+                req.add("slots", PainelAdminSalas.slotsDeTexto(c[4]));
                 return GSON.toJson(req);
             }
 
@@ -291,7 +291,7 @@ public class ClienteConsole {
                 req.add("resources", recursosDeSetroom(c[4]));
                 req.addProperty("room_status", vazioSeTraco(c[5]));
                 // Regra 8.7: lista vazia mantem os horarios atuais.
-                req.add("slots", PainelSalas.slotsDeTexto(c[6]));
+                req.add("slots", PainelAdminSalas.slotsDeTexto(c[6]));
                 return GSON.toJson(req);
             }
 
@@ -432,7 +432,7 @@ public class ClienteConsole {
             apagar.add(protocolo.Validador.APAGAR_RECURSOS);
             return apagar;
         }
-        return PainelSalas.recursosDeTexto(limpo);
+        return PainelAdminSalas.recursosDeTexto(limpo);
     }
 
     /** Regra 2.11: "-" digitado vira "", que quer dizer "nao alterar". */

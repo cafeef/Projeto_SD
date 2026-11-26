@@ -113,8 +113,10 @@ public class VerificaTelaDoCliente {
                 esperar(() -> nomesDasAbas().contains("Salas")));
         confere("a aba Usuarios aparece para administrador",
                 nomesDasAbas().contains("Usuários"));
-        confere("a aba Reservas aparece na sessao",
-                nomesDasAbas().contains("Reservas"));
+        confere("a aba de reservas aparece na sessao",
+                nomesDasAbas().contains("Minhas reservas"));
+        confere("a aba de administracao de salas aparece para administrador",
+                nomesDasAbas().contains("Administrar salas"));
 
         // ======================= CLIENTE, item a) =======================
         aba("Usuários");
@@ -176,275 +178,180 @@ public class VerificaTelaDoCliente {
                 esperar(() -> !textoDaTabela(tabelaUsuarios).contains(JOAO_NOVO))
                         && tabelaUsuarios.getRowCount() >= 2);
 
-        // ======================= CLIENTE, item d) =======================
-        aba("Salas");
-        JTable tabelaSalas = tabelaDe("painelSalas");
-        naEdt(() -> {
-            campoDe("painelSalas", "salaNome").setText(NOME_SALA);
-            campoDe("painelSalas", "salaCapacidade").setText("12");
-            campoDe("painelSalas", "salaLocal").setText("Bloco B - 1 andar");
-            campoDe("painelSalas", "salaRecursos").setText("projetor, tv");
+        // ============ CLIENTE, itens d) e) f) g) da EP-2: CRUD de salas ============
+        // O formulario abre em janela modal, entao quem o preenche e o vigia
+        // de dialogos: a thread do roteiro fica presa no showConfirmDialog.
+        aba("Administrar salas");
+        JTable tabelaSalas = tabelaDe("painelAdminSalas");
+
+        aoAbrirDialogo("salaNome", d -> {
+            escrever(d, "salaNome", NOME_SALA);
+            escrever(d, "salaCapacidade", "12");
+            escrever(d, "salaLocal", "Bloco B - 1 andar");
+            escrever(d, "salaRecursos", "projetor, tv");
             // 2026-12-01 e uma terca (digito 3 na grade da UTFPR).
-            slots("painelSalas", "salaHorarios").selecionar("3T1, 3T2, 3T3");
+            marcarSlots(d, "salaHorarios", "3T1, 3T2, 3T3");
         });
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Cadastrar nova sala"));
-        confere("d) ADM cadastra uma sala (nome e capacidade)",
+        clicar(botaoEm("painelAdminSalas", "Cadastrar sala"));
+        confere("d) ADM cadastra uma sala (nome, capacidade e horarios)",
                 esperar(() -> algumDialogo("Sala cadastrada com sucesso")));
         confere("d) a sala aparece na tabela",
                 esperar(() -> textoDaTabela(tabelaSalas).contains(NOME_SALA)));
-        confere("d) a sala nasce ativa e com os recursos",
-                textoDaTabela(tabelaSalas).contains("ativa")
-                        && textoDaTabela(tabelaSalas).contains("projetor, tv"));
+        // Espera pela LINHA da nossa sala, e nao pelo texto da tabela num
+        // instante: a tabela se recarrega sozinha depois de cada operacao, e
+        // ler "agora" pegava ora o estado anterior, ora o seguinte.
+        confere("d) a sala nasce ativa, com os recursos e os horarios marcados",
+                esperar(() -> {
+                    String linha = linhaDe(tabelaSalas, NOME_SALA);
+                    return linha != null && linha.contains("ativa")
+                            && linha.contains("projetor, tv")
+                            && linha.contains("terça 13:00-15:30");
+                }));
 
         // ======================= CLIENTE, item e) =======================
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Listar salas"));
+        clicar(botaoEm("painelAdminSalas", "Atualizar lista"));
         confere("e) ADM le os registros das salas",
                 esperar(() -> tabelaSalas.getRowCount() >= 1));
-        confere("e) a tabela traz capacidade e status",
-                textoDaTabela(tabelaSalas).contains("12")
-                        && textoDaTabela(tabelaSalas).contains("ativa"));
-        confere("e) sem horario, a disponibilidade vem como travessao",
-                textoDaTabela(tabelaSalas).contains("—"));
-
-        naEdt(() -> {
-            campoDe("painelSalas", "filtroData").setText("2026-12-01");
-            hora("painelSalas", "filtroInicio").selecionarHora("13:00");
-            hora("painelSalas", "filtroFim").selecionarHora("14:40");
-        });
-        limparDialogos();
-        clicar(botaoEm("painelSalas", "Listar salas"));
-        confere("e) com data e horario, mostra livre ou indisponivel",
-                esperar(() -> textoDaTabela(tabelaSalas).contains("livre")));
-
-        // Seleciona pelo NOME, e nao pela primeira linha: o servidor desta
-        // suite e compartilhado com as outras, que tambem cadastram salas.
-        confere("e) a sala de teste esta na tabela", selecionar(tabelaSalas, NOME_SALA));
-        limparDialogos();
-        clicar(botaoEm("painelSalas", "Ver detalhes da sala"));
-        confere("e) ADM abre os detalhes de uma sala",
-                esperar(() -> algumDialogo(NOME_SALA)
-                        && algumDialogo("12 lugares")));
-
-        // Regra 9.16: o dia inteiro de todas as salas, com a data preenchida
-        // e sem escolher sala nem horário. É o que nem o check_availability
-        // nem o list_rooms conseguem responder.
-        naEdt(() -> {
-            campoDe("painelSalas", "filtroData").setText("2026-12-01");
-            hora("painelSalas", "filtroInicio").selecionarHora("");
-            hora("painelSalas", "filtroFim").selecionarHora("");
-        });
-        limparDialogos();
-        clicar(botaoEm("painelSalas", "Ver o dia de todas as salas"));
-        confere("e) o dia inteiro de todas as salas abre com a data pedida",
-                esperar(() -> algumDialogo("2026-12-01")));
-        confere("e) e traz a sala de teste com a agenda dela",
-                algumDialogo(NOME_SALA));
-
-        // "Listar salas" só com a data é o trio pela metade (regra 9.11). A
-        // tela explica e aponta o botão certo, em vez de mandar e colher
-        // "Filtros em formato inválido" do servidor.
-        limparDialogos();
-        clicar(botaoEm("painelSalas", "Listar salas"));
-        confere("e) listar com a data sozinha explica o trio",
-                esperar(() -> algumDialogo("vão juntos")));
-        confere("e) e aponta o \"dia de todas as salas\"",
-                algumDialogo("dia de todas as salas"));
-        confere("e) sem mandar a requisição quebrada ao servidor",
-                !algumDialogo("Filtros em formato"));
-
-        // Sem data, o botão explica o que falta em vez de mandar e dar 400.
-        naEdt(() -> campoDe("painelSalas", "filtroData").setText(""));
-        limparDialogos();
-        clicar(botaoEm("painelSalas", "Ver o dia de todas as salas"));
-        confere("e) sem data, a tela pede a data",
-                esperar(() -> algumDialogo("Preencha a data")));
-        naEdt(() -> campoDe("painelSalas", "filtroData").setText("2026-12-01"));
+        confere("e) a tabela traz capacidade, local e estado",
+                esperar(() -> {
+                    String linha = linhaDe(tabelaSalas, NOME_SALA);
+                    return linha != null && linha.contains("12")
+                            && linha.contains("Bloco B") && linha.contains("ativa");
+                }));
 
         // ======================= CLIENTE, item f) =======================
-        selecionar(tabelaSalas, NOME_SALA);
-        naEdt(() -> {
-            campoDe("painelSalas", "salaCapacidade").setText("20");
-            comboDe("painelSalas", "salaEstado").setSelectedItem("inactive");
+        // Seleciona pelo NOME, e nao pela primeira linha: o servidor desta
+        // suite e compartilhado com as outras, que tambem cadastram salas.
+        confere("f) a sala de teste esta selecionavel",
+                selecionar(tabelaSalas, NOME_SALA));
+        aoAbrirDialogo("salaCapacidade", d -> {
+            escrever(d, "salaCapacidade", "20");
+            Component estado = porNome(d, "salaEstado");
+            if (estado instanceof JComboBox<?> combo) {
+                combo.setSelectedItem("inactive");
+            }
         });
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Salvar na sala selecionada"));
+        clicar(botaoEm("painelAdminSalas", "Editar sala"));
         confere("f) ADM atualiza dados da sala",
                 esperar(() -> algumDialogo("Sala atualizada com sucesso")));
-        confere("f) a capacidade e o status novos aparecem na tabela",
-                esperar(() -> textoDaTabela(tabelaSalas).contains("20")
-                        && textoDaTabela(tabelaSalas).contains("inativa")));
+        confere("f) a capacidade e o estado novos aparecem na tabela",
+                esperar(() -> {
+                    String linha = linhaDe(tabelaSalas, NOME_SALA);
+                    return linha != null && linha.contains("20")
+                            && linha.contains("inativa");
+                }));
 
         // ======================= CLIENTE, item g) =======================
         selecionar(tabelaSalas, NOME_SALA);
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Excluir sala"));
+        clicar(botaoEm("painelAdminSalas", "Excluir sala"));
         confere("g) ADM remove uma sala",
                 esperar(() -> algumDialogo("Sala removida com sucesso")));
         confere("g) a sala sai dos registros",
                 esperar(() -> !textoDaTabela(tabelaSalas).contains(NOME_SALA)));
 
-        // ================== CLIENTE, itens b), c), d) e f) da EP-3 ==================
-        // Sala propria, criada depois do item g: a dos itens d a g foi
+        // ============== CLIENTE, EP-3: a grade do dia e as reservas ==============
+        // Uma sala propria, criada depois do item g: a dos itens d a g foi
         // removida, e uma reserva nela impediria justamente essa remocao.
-        aba("Salas");
         String diaDaReserva = proximaTerca();
-        naEdt(() -> {
-            campoDe("painelSalas", "salaNome").setText(SALA_RESERVA);
-            campoDe("painelSalas", "salaCapacidade").setText("12");
-            campoDe("painelSalas", "salaLocal").setText("Bloco C");
-            campoDe("painelSalas", "salaRecursos").setText("tv");
-            slots("painelSalas", "salaHorarios").selecionar("3T1, 3T2, 3T3");
+        aoAbrirDialogo("salaNome", d -> {
+            escrever(d, "salaNome", SALA_RESERVA);
+            escrever(d, "salaCapacidade", "12");
+            escrever(d, "salaLocal", "Bloco C");
+            escrever(d, "salaRecursos", "tv");
+            marcarSlots(d, "salaHorarios", "3T1, 3T2, 3T3");
         });
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Cadastrar nova sala"));
+        clicar(botaoEm("painelAdminSalas", "Cadastrar sala"));
         confere("sala para as reservas criada",
                 esperar(() -> textoDaTabela(tabelaSalas).contains(SALA_RESERVA)));
-        confere("a sala de reserva esta na tabela", selecionar(tabelaSalas, SALA_RESERVA));
-        String idSala = valorSelecionado(tabelaSalas, 0);
 
-        aba("Reservas");
-        JTable tabelaReservas = tabelaDe("painelReservas");
-
-        // --- item b) verificar disponibilidade ---
-        naEdt(() -> {
-            campoDe("painelReservas", "dispSala").setText(idSala);
-            campoDe("painelReservas", "dispData").setText(diaDaReserva);
-            hora("painelReservas", "dispInicio").selecionarHora("13:00");
-            hora("painelReservas", "dispFim").selecionarHora("14:40");
-        });
+        // --- item b) ver o dia: a grade de blocos ---
+        aba("Salas");
+        naEdt(() -> campoDe("painelSalas", "campoDia").setText(diaDaReserva));
         limparDialogos();
-        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
-        confere("b) usuario verifica a disponibilidade da sala",
+        clicar(botaoEm("painelSalas", "Ver o dia"));
+        confere("b) a grade do dia mostra as salas com horario livre",
+                esperar(() -> textoDe("painelSalas").contains(SALA_RESERVA)));
+        confere("b) e mostra os blocos livres",
+                textoDe("painelSalas").contains("livre"));
+
+        // Clicar num bloco livre escolhe o horario -- sem digitar nada.
+        confere("b) clicar num bloco livre escolhe sala e horario",
+                esperar(() -> clicarNoPrimeiroBlocoLivre("painelSalas"))
+                        && esperar(() -> textoDe("painelSalas").contains("13:00-13:50")));
+
+        // --- item j/b) conferir a disponibilidade daquele recorte ---
+        limparDialogos();
+        clicar(botaoEm("painelSalas", "Conferir disponibilidade"));
+        confere("b) conferir a disponibilidade do bloco escolhido",
                 esperar(() -> algumDialogo("LIVRE")));
-        confere("b) a tela avisa que a consulta nao segura a sala",
-                algumDialogo("não reserva"));
 
-        // Consultar um dia que já passou é válido (regra 9.4) e o servidor
-        // responde "available": "true" -- mas aquilo não dá para reservar
-        // (regra 9.3). Sem o aviso, o "LIVRE" convida a tentar e levar 400.
-        naEdt(() -> campoDe("painelReservas", "dispData").setText(
-                java.time.LocalDate.now().minusDays(1).toString()));
-        limparDialogos();
-        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
-        confere("b) consultar um dia passado avisa que não dá para reservar",
-                esperar(() -> algumDialogo("não é possível reservar")));
-        confere("b) e fala no passado, não como se ainda desse",
-                algumDialogo("estava"));
-        naEdt(() -> campoDe("painelReservas", "dispData").setText(diaDaReserva));
-
-        // --- item d) fazer a reserva ---
-        naEdt(() -> {
-            campoDe("painelReservas", "novaSala").setText(idSala);
-            campoDe("painelReservas", "novaData").setText(diaDaReserva);
-            hora("painelReservas", "novaInicio").selecionarHora("13:00");
-            hora("painelReservas", "novaFim").selecionarHora("14:40");
-            campoDe("painelReservas", "novaAssunto").setText("Reuniao de projeto");
-            campoDe("painelReservas", "novaParticipantes").setText("6");
+        // --- item d) reservar o bloco escolhido ---
+        aoAbrirDialogo("reservaAssunto", d -> {
+            escrever(d, "reservaAssunto", "Reuniao de projeto");
+            escrever(d, "reservaParticipantes", "6");
         });
         limparDialogos();
-        clicar(botaoEm("painelReservas", "Reservar sala"));
-        confere("d) usuario faz uma reserva com assunto e participantes",
+        clicar(botaoEm("painelSalas", "Reservar este horário"));
+        confere("d) usuario reserva o bloco escolhido na grade",
                 esperar(() -> algumDialogo("Reserva realizada com sucesso")));
+        confere("d) o bloco deixa de aparecer como livre para outros",
+                esperar(() -> textoDe("painelSalas").contains("admin")));
 
-        // Horario que ja passou: a tela avisa ANTES de mandar, com todas as
-        // letras. O servidor responderia "Dados da reserva em formato
-        // invalido", que nao diz a quem le o que esta errado.
-        naEdt(() -> {
-            campoDe("painelReservas", "novaSala").setText(idSala);
-            campoDe("painelReservas", "novaData").setText(
-                    java.time.LocalDate.now().minusDays(7).toString());
-            // O início antes do fim: a lista de fins só mostra o que vem
-            // depois do início escolhido.
-            hora("painelReservas", "novaInicio").selecionarHora("13:00");
-            hora("painelReservas", "novaFim").selecionarHora("14:40");
-            campoDe("painelReservas", "novaAssunto").setText("Reuniao no passado");
-            campoDe("painelReservas", "novaParticipantes").setText("4");
-        });
+        // --- item c) as minhas reservas ---
+        aba("Minhas reservas");
+        JTable tabelaReservas = tabelaDe("painelReservas");
         limparDialogos();
-        clicar(botaoEm("painelReservas", "Reservar sala"));
-        confere("d) reservar no passado diz que o dia passou",
-                esperar(() -> algumDialogo("já passou")));
-        confere("d) e nao fala em \"dados invalidos\"",
-                !algumDialogo("formato inv") && !algumDialogo("Dados"));
-
-        // Volta a data boa para os itens seguintes.
-        naEdt(() -> {
-            campoDe("painelReservas", "novaData").setText(diaDaReserva);
-            campoDe("painelReservas", "novaAssunto").setText("Reuniao de projeto");
-            campoDe("painelReservas", "novaParticipantes").setText("6");
-        });
-
-        // --- item c) recuperar as proprias reservas ---
-        limparDialogos();
-        clicar(botaoEm("painelReservas", "Listar reservas"));
+        clicar(botaoEm("painelReservas", "Atualizar lista"));
         confere("c) usuario recupera suas reservas",
                 esperar(() -> textoDaTabela(tabelaReservas).contains(SALA_RESERVA)));
-        confere("c) a lista traz sala, dia e horario alocados",
+        confere("c) a lista traz sala, dia, horario e assunto",
                 textoDaTabela(tabelaReservas).contains(diaDaReserva)
                         && textoDaTabela(tabelaReservas).contains("13:00")
-                        && textoDaTabela(tabelaReservas).contains("14:40")
                         && textoDaTabela(tabelaReservas).contains("Reuniao de projeto"));
 
-        confere("c) a reserva esta selecionavel na tabela",
+        confere("c) a reserva esta selecionavel",
                 selecionar(tabelaReservas, SALA_RESERVA));
         limparDialogos();
-        clicar(botaoEm("painelReservas", "Ver detalhes da reserva"));
+        clicar(botaoEm("painelReservas", "Ver detalhes"));
         confere("c) os detalhes da reserva abrem pelo id",
                 esperar(() -> algumDialogo("Reuniao de projeto")));
-
-        // Agora que existe reserva, a mesma consulta do item b muda de resposta.
-        limparDialogos();
-        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
-        confere("b) depois de reservada, a sala aparece indisponivel",
-                esperar(() -> algumDialogo("NÃO está")));
 
         // --- item e) alterar a reserva ---
         confere("e) a reserva a alterar esta selecionada",
                 selecionar(tabelaReservas, SALA_RESERVA));
-        naEdt(() -> {
-            // O formulario ja veio preenchido pela selecao; muda o assunto e
-            // o numero de participantes, e apaga o resto ("nao alterar").
-            campoDe("painelReservas", "novaSala").setText("");
-            campoDe("painelReservas", "novaData").setText("");
-            hora("painelReservas", "novaInicio").selecionarHora("");
-            hora("painelReservas", "novaFim").selecionarHora("");
-            campoDe("painelReservas", "novaAssunto").setText("Reuniao remarcada");
-            campoDe("painelReservas", "novaParticipantes").setText("8");
+        aoAbrirDialogo("reservaAssunto", d -> {
+            escrever(d, "reservaAssunto", "Reuniao remarcada");
+            escrever(d, "reservaParticipantes", "8");
         });
         limparDialogos();
-        clicar(botaoEm("painelReservas", "Salvar alterações na reserva"));
+        clicar(botaoEm("painelReservas", "Alterar reserva"));
         confere("e) usuario atualiza o topico e os participantes",
                 esperar(() -> algumDialogo("Reserva atualizada com sucesso")));
         confere("e) os dados novos aparecem na lista",
                 esperar(() -> textoDaTabela(tabelaReservas).contains("Reuniao remarcada")
                         && textoDaTabela(tabelaReservas).contains("8")));
 
-        // "UC libera a sala": adiantar o fim devolve o resto do horario sem
-        // cancelar a reserva (regra 9.3).
-        confere("e) a reserva continua selecionavel",
-                selecionar(tabelaReservas, SALA_RESERVA));
-        naEdt(() -> {
-            campoDe("painelReservas", "novaSala").setText("");
-            campoDe("painelReservas", "novaData").setText("");
-            hora("painelReservas", "novaInicio").selecionarHora("");
-            hora("painelReservas", "novaFim").selecionarHora("13:50");
-            campoDe("painelReservas", "novaAssunto").setText("");
-            campoDe("painelReservas", "novaParticipantes").setText("");
+        // Reservar no passado: a tela avisa antes de mandar, porque o servidor
+        // responderia "Dados da reserva em formato invalido" (regra 9.3).
+        aoAbrirDialogo("reservaSala", d -> {
+            escrever(d, "reservaSala", "1");
+            escrever(d, "reservaData", java.time.LocalDate.now().minusDays(7).toString());
+            escolherHora(d, "reservaInicio", "13:00");
+            escolherHora(d, "reservaFim", "13:50");
+            escrever(d, "reservaAssunto", "Reuniao no passado");
+            escrever(d, "reservaParticipantes", "2");
         });
         limparDialogos();
-        clicar(botaoEm("painelReservas", "Salvar alterações na reserva"));
-        confere("e) usuario encurta a reserva e libera a sala",
-                esperar(() -> algumDialogo("Reserva atualizada com sucesso")));
-        naEdt(() -> {
-            hora("painelReservas", "dispInicio").selecionarHora("13:50");
-            hora("painelReservas", "dispFim").selecionarHora("14:40");
-        });
-        limparDialogos();
-        clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
-        confere("e) o horario liberado volta a aparecer livre",
-                esperar(() -> algumDialogo("LIVRE")));
+        clicar(botaoEm("painelReservas", "Nova reserva"));
+        confere("d) reservar no passado diz que o dia passou",
+                esperar(() -> algumDialogo("já passou")));
+        confere("d) e nao fala em \"dados invalidos\"",
+                !algumDialogo("formato inv"));
 
         // --- item f) cancelar a reserva ---
         confere("f) a reserva a cancelar esta selecionada",
@@ -457,13 +364,13 @@ public class VerificaTelaDoCliente {
                 esperar(() -> !textoDaTabela(tabelaReservas).contains(SALA_RESERVA)));
 
         // Limpeza: sem reserva ativa, a sala volta a poder ser removida.
-        aba("Salas");
+        aba("Administrar salas");
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Listar salas"));
+        clicar(botaoEm("painelAdminSalas", "Atualizar lista"));
         esperar(() -> textoDaTabela(tabelaSalas).contains(SALA_RESERVA));
         selecionar(tabelaSalas, SALA_RESERVA);
         limparDialogos();
-        clicar(botaoEm("painelSalas", "Excluir sala"));
+        clicar(botaoEm("painelAdminSalas", "Excluir sala"));
         confere("a sala das reservas e removida no fim",
                 esperar(() -> !textoDaTabela(tabelaSalas).contains(SALA_RESERVA)));
 
@@ -540,12 +447,47 @@ public class VerificaTelaDoCliente {
     // ------------------------------------------------------------------ apoio
 
     /** Fecha os dialogos modais que a tela abre, guardando o texto antes. */
+    /**
+     * O que fazer com o proximo dialogo antes de confirma-lo.
+     *
+     * Os formularios de sala e de reserva abrem em janela modal. O vigia
+     * confirma qualquer dialogo que apareca, entao para TESTAR um formulario
+     * e preciso preenche-lo no instante em que ele surge -- e so o vigia
+     * chega la, porque a thread do roteiro fica presa no showConfirmDialog.
+     */
+    static final java.util.concurrent.atomic.AtomicReference<Object[]> AO_ABRIR =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
+    /**
+     * Registra o preenchimento do proximo formulario modal.
+     *
+     * @param campoChave nome de um campo que SO existe nesse formulario. O
+     *                   preenchimento espera por ele: um dialogo de erro ou de
+     *                   confirmacao que apareca no meio do caminho nao consome
+     *                   a acao, e o formulario certo continua sendo preenchido
+     *                   quando abrir. Sem isso o teste ficava intermitente --
+     *                   um aviso inesperado roubava o preenchedor, o
+     *                   formulario abria vazio e tudo o que vinha depois
+     *                   falhava por uma causa que nao era a testada.
+     */
+    static void aoAbrirDialogo(String campoChave, java.util.function.Consumer<JDialog> acao) {
+        AO_ABRIR.set(new Object[] {campoChave, acao});
+    }
+
     static void vigiaDeDialogos() {
         Thread t = new Thread(() -> {
             while (true) {
                 SwingUtilities.invokeLater(() -> {
                     for (Window w : Window.getWindows()) {
                         if (w instanceof JDialog d && d.isVisible()) {
+                            Object[] pendente = AO_ABRIR.get();
+                            if (pendente != null && porNome(d, (String) pendente[0]) != null) {
+                                AO_ABRIR.set(null);
+                                @SuppressWarnings("unchecked")
+                                java.util.function.Consumer<JDialog> preencher =
+                                        (java.util.function.Consumer<JDialog>) pendente[1];
+                                preencher.accept(d);
+                            }
                             DIALOGOS.add(textosDe(d));
                             JButton confirmar = acharBotao(d, "OK", "Sim", "Yes");
                             if (confirmar != null) {
@@ -567,11 +509,124 @@ public class VerificaTelaDoCliente {
         t.start();
     }
 
+    /**
+     * O texto da linha cuja segunda coluna contem o alvo, ou null.
+     *
+     * Olhar a LINHA, e nao a tabela inteira, evita dois enganos: confundir a
+     * nossa sala com a de outra suite, e dar por boa uma tabela em que os
+     * pedacos procurados estao em linhas diferentes.
+     */
+    static String linhaDe(JTable tabela, String alvo) {
+        String[] achada = {null};
+        naEdt(() -> {
+            for (int i = 0; i < tabela.getRowCount(); i++) {
+                StringBuilder linha = new StringBuilder();
+                boolean ehEssa = false;
+                for (int j = 0; j < tabela.getColumnCount(); j++) {
+                    Object v = tabela.getValueAt(i, j);
+                    String texto = v == null ? "" : v.toString();
+                    if (texto.contains(alvo)) {
+                        ehEssa = true;
+                    }
+                    linha.append(texto).append(" | ");
+                }
+                if (ehEssa) {
+                    achada[0] = linha.toString();
+                    return;
+                }
+            }
+        });
+        return achada[0];
+    }
+
+    /** Todo o texto visivel de um painel da janela -- rotulos e botoes. */
+    static String textoDe(String painel) {
+        StringBuilder sb = new StringBuilder();
+        naEdt(() -> sb.append(textosDe((Container) ler(painel))));
+        return sb.toString();
+    }
+
+    /**
+     * Clica no primeiro bloco "livre" da grade do dia.
+     *
+     * A grade e feita de botoes, e nao de linhas de tabela: escolher um
+     * horario e clicar num deles, que e exatamente o que o usuario faz.
+     */
+    static boolean clicarNoPrimeiroBlocoLivre(String painel) {
+        boolean[] clicou = {false};
+        naEdt(() -> {
+            for (Component c : todosOsComponentes((Container) ler(painel))) {
+                if (c instanceof JButton b && "livre".equals(b.getText()) && b.isEnabled()) {
+                    b.doClick();
+                    clicou[0] = true;
+                    return;
+                }
+            }
+        });
+        return clicou[0];
+    }
+
+    static List<Component> todosOsComponentes(Container c) {
+        List<Component> saida = new ArrayList<>();
+        for (Component x : c.getComponents()) {
+            saida.add(x);
+            if (x instanceof Container k) {
+                saida.addAll(todosOsComponentes(k));
+            }
+        }
+        return saida;
+    }
+
+    /** Acha um componente pelo nome dentro de um dialogo (ou de qualquer painel). */
+    static Component porNome(Container c, String nome) {
+        for (Component x : c.getComponents()) {
+            if (nome.equals(x.getName())) {
+                return x;
+            }
+            if (x instanceof Container k) {
+                Component achado = porNome(k, nome);
+                if (achado != null) {
+                    return achado;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Escreve num campo de texto do dialogo. */
+    static void escrever(JDialog d, String nome, String valor) {
+        Component c = porNome(d, nome);
+        if (c instanceof JTextField campo) {
+            campo.setText(valor);
+        }
+    }
+
+    /** Escolhe um horario numa lista do dialogo. */
+    static void escolherHora(JDialog d, String nome, String hora) {
+        Component c = porNome(d, nome);
+        if (c instanceof cliente.ComboDeHorario combo) {
+            combo.selecionarHora(hora);
+        }
+    }
+
+    /** Marca horarios na grade de blocos do dialogo. */
+    static void marcarSlots(JDialog d, String nome, String codigos) {
+        Component c = porNome(d, nome);
+        if (c instanceof cliente.GradeDeSlots grade) {
+            grade.selecionar(codigos);
+        }
+    }
+
     static String textosDe(Container c) {
         StringBuilder sb = new StringBuilder();
         for (Component x : c.getComponents()) {
             if (x instanceof JLabel l && l.getText() != null) {
                 sb.append(l.getText()).append(' ');
+            }
+            // Os blocos da grade do dia sao botoes: sem este ramo, a grade
+            // seria invisivel para o teste.
+            if (x instanceof javax.swing.AbstractButton b && b.getText() != null) {
+                sb.append(b.getText()).append(' ');
             }
             // Diálogo com área de rolagem -- o do "dia de todas as salas" --
             // guarda o texto numa JTextArea, e não numa JLabel. Sem este ramo
@@ -782,8 +837,8 @@ public class VerificaTelaDoCliente {
     }
 
     /** Lista de escolha dos horarios de funcionamento da sala. */
-    static cliente.SeletorDeSlots slots(String painel, String campo) {
-        return (cliente.SeletorDeSlots) campoDeObjeto(ler(painel), campo);
+    static cliente.GradeDeSlots slots(String painel, String campo) {
+        return (cliente.GradeDeSlots) campoDeObjeto(ler(painel), campo);
     }
 
     @SuppressWarnings("unchecked")

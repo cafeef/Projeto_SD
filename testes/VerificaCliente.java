@@ -27,6 +27,7 @@ public class VerificaCliente {
         seletores();
         horarioQuePassou();
         diaInteiro();
+        salasComHorarioLivre();
 
         System.out.println("\n===== cliente: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
@@ -37,37 +38,35 @@ public class VerificaCliente {
     static void requisicoesDeSala() {
         System.out.println("\n-- requisicoes de sala --");
 
-        // Regra 2.1: 'op' e a primeira chave da mensagem.
-        JsonObject semFiltro = PainelSalas.requisicaoDeListagem(TOKEN, "", "", "", "");
-        confere("list_rooms comeca pela chave 'op' (regra 2.1)",
-                semFiltro.keySet().iterator().next().equals("op"));
-        confere("list_rooms sem filtro leva so op e token",
-                semFiltro.keySet().equals(java.util.Set.of("op", "token")));
+        // A aba Salas faz duas perguntas, e cada uma tem a sua operacao.
 
-        // Filtro em branco nao vira chave: a ausencia e que diz "sem filtro".
-        JsonObject comTrio = PainelSalas.requisicaoDeListagem(TOKEN, "2026-12-01", "14:00",
-                "16:00", "");
-        confere("o trio de horario viaja completo",
-                "2026-12-01".equals(texto(comTrio, "date"))
-                        && "14:00".equals(texto(comTrio, "start_time"))
-                        && "16:00".equals(texto(comTrio, "end_time")));
-        confere("min_capacity em branco nao vira chave", !comTrio.has("min_capacity"));
+        // 1) "O que tem no dia 30?" -> read_room SEM room_id (regra 9.16).
+        // A chave fica de fora de proposito: e a ausencia dela que pede todas
+        // as salas, e manda-la vazia seria 400.
+        JsonObject dia = PainelSalas.requisicaoDoDia(TOKEN, " 2026-11-30 ");
+        confere("a grade do dia usa read_room (regra 9.16)",
+                "read_room".equals(texto(dia, "op")));
+        confere("read_room comeca pela chave 'op' (regra 2.1)",
+                dia.keySet().iterator().next().equals("op"));
+        confere("a grade do dia manda so op, token e date",
+                dia.keySet().equals(java.util.Set.of("op", "token", "date")));
+        confere("o room_id fica de fora: e ele que pede TODAS as salas",
+                !dia.has("room_id"));
+        confere("o espaco digitado em volta da data e aparado",
+                "2026-11-30".equals(texto(dia, "date")));
 
-        JsonObject soCapacidade = PainelSalas.requisicaoDeListagem(TOKEN, "", "", "", "8");
-        confere("min_capacity viaja sozinho, sem o trio",
-                "8".equals(texto(soCapacidade, "min_capacity"))
-                        && !soCapacidade.has("date"));
-
-        // Espaco sobrando no campo nao deve virar valor com espaco.
-        confere("o espaco digitado em volta do filtro e aparado",
-                "2026-12-01".equals(texto(
-                        PainelSalas.requisicaoDeListagem(TOKEN, "  2026-12-01  ", "14:00",
-                                "16:00", ""), "date")));
-        confere("campo so com espaco conta como em branco",
-                !PainelSalas.requisicaoDeListagem(TOKEN, "   ", "", "", "").has("date"));
+        // 2) "Quais salas existem?" -> list_rooms sem filtro nenhum. E o
+        // catalogo, e nao uma pergunta sobre um dia: o trio data/inicio/fim
+        // do list_rooms e tudo ou nada (regra 9.11), e sem hora a pergunta
+        // "esta livre no dia 30?" nao teria resposta unica.
+        JsonObject catalogo = PainelSalas.requisicaoDoCatalogo(TOKEN);
+        confere("o catalogo usa list_rooms",
+                "list_rooms".equals(texto(catalogo, "op")));
+        confere("o catalogo nao manda filtro nenhum",
+                catalogo.keySet().equals(java.util.Set.of("op", "token")));
 
         // --- create_room ---
-        JsonObject cadastro = PainelSalas.requisicaoDeCadastro(TOKEN, " Sala B12 ", " 12 ",
+        JsonObject cadastro = PainelAdminSalas.requisicaoDeCadastro(TOKEN, " Sala B12 ", " 12 ",
                 " Bloco B ", "projetor, tv", "2M1, 3T1");
         confere("create_room leva op, token e os cinco campos da sala",
                 cadastro.keySet().equals(java.util.Set.of(
@@ -84,7 +83,7 @@ public class VerificaCliente {
                         && cadastro.getAsJsonArray("resources").size() == 2);
 
         // --- update_room ---
-        JsonObject alteracao = PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "Sala B12", "16",
+        JsonObject alteracao = PainelAdminSalas.requisicaoDeAlteracao(TOKEN, "7", "Sala B12", "16",
                 "Bloco B", "projetor", "inactive", "");
         confere("update_room leva op, token, room_id e os seis campos da sala",
                 alteracao.keySet().equals(java.util.Set.of(
@@ -100,16 +99,16 @@ public class VerificaCliente {
         // branco vira -- o formulario chega preenchido com os recursos atuais,
         // entao apaga-lo e um pedido, nao um descuido.
         confere("update_room com recursos em branco manda [\"0\"] (apagar)",
-                PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "", "", "", "")
+                PainelAdminSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "", "", "", "")
                         .getAsJsonArray("resources").toString().equals("[\"0\"]"));
         confere("update_room com recursos preenchidos manda a lista",
-                PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "", "tv, projetor", "", "")
+                PainelAdminSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "", "tv, projetor", "", "")
                         .getAsJsonArray("resources").toString()
                         .equals("[\"tv\",\"projetor\"]"));
         // No create_room o vazio continua sendo "sala sem recurso nenhum":
         // nao ha recurso anterior para manter nem para apagar.
         confere("create_room com recursos em branco manda [] (sala sem recursos)",
-                PainelSalas.requisicaoDeCadastro(TOKEN, "Sala X", "4", "Bloco A", "", "2M1")
+                PainelAdminSalas.requisicaoDeCadastro(TOKEN, "Sala X", "4", "Bloco A", "", "2M1")
                         .getAsJsonArray("resources").size() == 0);
 
         // Todos os valores sao strings, inclusive os numericos (regra 2.7).
@@ -124,39 +123,39 @@ public class VerificaCliente {
         System.out.println("\n-- campo de horarios (grade da UTFPR) --");
 
         confere("um horario so",
-                PainelSalas.slotsDeTexto("2M1").toString().equals("[\"2M1\"]"));
+                PainelAdminSalas.slotsDeTexto("2M1").toString().equals("[\"2M1\"]"));
         confere("varios, com o espaco aparado",
-                PainelSalas.slotsDeTexto(" 2M1 , 3T1 ,4N2").toString()
+                PainelAdminSalas.slotsDeTexto(" 2M1 , 3T1 ,4N2").toString()
                         .equals("[\"2M1\",\"3T1\",\"4N2\"]"));
         // O codigo da grade e maiusculo; punir quem digita "2m1" seria so
         // transformar um deslize de teclado num 400 do servidor.
         confere("minuscula vira maiuscula",
-                PainelSalas.slotsDeTexto("2m1, 3t1").toString()
+                PainelAdminSalas.slotsDeTexto("2m1, 3t1").toString()
                         .equals("[\"2M1\",\"3T1\"]"));
         confere("campo vazio vira lista vazia",
-                PainelSalas.slotsDeTexto("").size() == 0);
+                PainelAdminSalas.slotsDeTexto("").size() == 0);
         confere("virgula dobrada nao cria horario vazio",
-                PainelSalas.slotsDeTexto("2M1,,3T1").size() == 2);
+                PainelAdminSalas.slotsDeTexto("2M1,,3T1").size() == 2);
 
         // Regra 8.2 no create_room: obrigatorio.
-        JsonObject semHorario = PainelSalas.requisicaoDeCadastro(TOKEN, "Sala X", "10",
+        JsonObject semHorario = PainelAdminSalas.requisicaoDeCadastro(TOKEN, "Sala X", "10",
                 "Bloco A", "", "");
         confere("create_room sem horario manda slots vazio, e o servidor recusa",
                 semHorario.getAsJsonArray("slots").size() == 0);
 
         // Regra 8.7 no update_room: vazio MANTEM, nao apaga.
-        JsonObject semMudarHorario = PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "",
+        JsonObject semMudarHorario = PainelAdminSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "",
                 "", "", "");
         confere("update_room com horario em branco manda [] (= nao alterar)",
                 semMudarHorario.has("slots")
                         && semMudarHorario.getAsJsonArray("slots").size() == 0);
-        JsonObject comHorario = PainelSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "",
+        JsonObject comHorario = PainelAdminSalas.requisicaoDeAlteracao(TOKEN, "7", "", "", "",
                 "", "", "5N1, 5N2");
         confere("update_room com horarios manda a lista nova",
                 comHorario.getAsJsonArray("slots").toString().equals("[\"5N1\",\"5N2\"]"));
 
         // A tabela e o formulario conversam pelo mesmo texto.
-        JsonObject resposta = com("slots", PainelSalas.slotsDeTexto("2M1, 3T1"));
+        JsonObject resposta = com("slots", PainelAdminSalas.slotsDeTexto("2M1, 3T1"));
         confere("o array da resposta volta para '2M1, 3T1'",
                 "2M1, 3T1".equals(PainelSalas.listaParaTexto(resposta, "slots")));
         confere("resposta sem 'slots' nao quebra a tabela",
@@ -167,43 +166,63 @@ public class VerificaCliente {
         System.out.println("\n-- campo de recursos --");
 
         confere("texto vazio vira array vazio, nao array com item vazio",
-                PainelSalas.recursosDeTexto("").size() == 0);
+                PainelAdminSalas.recursosDeTexto("").size() == 0);
         confere("texto so com espaco vira array vazio",
-                PainelSalas.recursosDeTexto("   ").size() == 0);
+                PainelAdminSalas.recursosDeTexto("   ").size() == 0);
         confere("um recurso so",
-                PainelSalas.recursosDeTexto("projetor").toString().equals("[\"projetor\"]"));
+                PainelAdminSalas.recursosDeTexto("projetor").toString().equals("[\"projetor\"]"));
         confere("dois recursos, com o espaco aparado",
-                PainelSalas.recursosDeTexto(" projetor ,  tv ").toString()
+                PainelAdminSalas.recursosDeTexto(" projetor ,  tv ").toString()
                         .equals("[\"projetor\",\"tv\"]"));
         // "tv,,projetor" digitado as pressas nao deve criar um recurso sem nome.
         confere("virgula dobrada nao cria recurso de nome vazio",
-                PainelSalas.recursosDeTexto("tv,,projetor").toString()
+                PainelAdminSalas.recursosDeTexto("tv,,projetor").toString()
                         .equals("[\"tv\",\"projetor\"]"));
         confere("a ordem digitada e preservada",
-                PainelSalas.recursosDeTexto("tv, projetor").toString()
+                PainelAdminSalas.recursosDeTexto("tv, projetor").toString()
                         .equals("[\"tv\",\"projetor\"]"));
         confere("virgula no fim nao cria item extra",
-                PainelSalas.recursosDeTexto("tv,").size() == 1);
+                PainelAdminSalas.recursosDeTexto("tv,").size() == 1);
 
         // Ida e volta: o array da resposta volta ao formato do campo de texto.
-        JsonObject resposta = com("resources", PainelSalas.recursosDeTexto("projetor, tv"));
+        JsonObject resposta = com("resources", PainelAdminSalas.recursosDeTexto("projetor, tv"));
         confere("o array da resposta volta para 'projetor, tv'",
                 "projetor, tv".equals(PainelSalas.recursosParaTexto(resposta)));
-        confere("resposta sem 'resources' nao quebra a tabela",
-                "".equals(PainelSalas.recursosParaTexto(new JsonObject())));
+        confere("sala sem recurso nenhum nao vira texto vazio na tela",
+                "(nenhum)".equals(PainelSalas.recursosParaTexto(new JsonObject())));
+    }
 
-        // O 'available' so vem com o trio de horario; sem ele, a tabela nao
-        // pode insinuar que a sala esta indisponivel.
-        confere("available ausente aparece como travessao",
-                "—".equals(PainelSalas.disponibilidade(null)));
-        confere("available \"true\" aparece como livre",
-                "livre".equals(PainelSalas.disponibilidade("true")));
-        // "Indisponivel" e nao "ocupada": o false do protocolo cobre sala
-        // inactive e horario fora do funcionamento, e nao so reserva.
-        confere("available \"false\" aparece como indisponivel",
-                "indisponível".equals(PainelSalas.disponibilidade("false")));
-        confere("a tabela nao chama de ocupada o que nao tem reserva",
-                !"ocupada".equals(PainelSalas.disponibilidade("false")));
+    // ------------------------------------- "so salas com horario livre" (9.16)
+
+    /**
+     * O filtro que a aba Salas aplica: so entra na grade a sala que tem pelo
+     * menos um bloco RESERVAVEL naquele dia.
+     *
+     * "Reservavel" exclui o que ja passou. Um bloco de ontem continua "livre"
+     * na resposta do servidor (regra 9.15), mas o create_reservation o recusa
+     * (regra 9.3) -- conta-lo faria a sala aparecer na lista de disponiveis
+     * sem ter nada para oferecer.
+     */
+    static void salasComHorarioLivre() {
+        System.out.println("\n-- filtro de salas com horario livre --");
+        String amanha = java.time.LocalDate.now().plusDays(1).toString();
+        String ontem = java.time.LocalDate.now().minusDays(1).toString();
+
+        JsonObject livre = salaComAgenda("3", "Lab IV", "20", "active", "3T1", "livre", null);
+        confere("sala com bloco livre amanha entra na grade",
+                GradeDoDia.temHorarioLivre(livre, amanha));
+        confere("a MESMA sala, com o dia ja passado, fica de fora",
+                !GradeDoDia.temHorarioLivre(livre, ontem));
+
+        JsonObject ocupada = salaComAgenda("2", "Lab V", "35", "active", "3T1",
+                "indisponivel", "joao");
+        confere("sala com o unico bloco ocupado fica de fora",
+                !GradeDoDia.temHorarioLivre(ocupada, amanha));
+
+        JsonObject semAgenda = new JsonObject();
+        semAgenda.addProperty("room_id", "9");
+        confere("sala que nao funciona nesse dia fica de fora",
+                !GradeDoDia.temHorarioLivre(semAgenda, amanha));
     }
 
     // -------------------------------------------------------------- reservas
@@ -383,9 +402,9 @@ public class VerificaCliente {
                         && "".equals(filtro.hora()));
 
         // --- os horários de funcionamento da sala ---
-        SeletorDeSlots slots = new SeletorDeSlots();
-        confere("a lista traz os 102 horarios da grade",
-                slots.getModel().getSize() == 102);
+        GradeDeSlots slots = new GradeDeSlots();
+        confere("a grade tem um bloco para cada horario da semana",
+                slots.selecionados().isEmpty());
         confere("nada marcado devolve texto vazio", "".equals(slots.texto()));
 
         slots.selecionar("3T1, 3T2");
@@ -444,33 +463,44 @@ public class VerificaCliente {
                 "joao"));
         resposta.add("rooms", salas);
 
-        String texto = PainelSalas.diaInteiroPorExtenso(resposta, "2027-01-05");
-        confere("o texto diz quantas salas e de que dia",
-                texto.startsWith("2 salas em 2027-01-05:"));
-        confere("cada sala aparece com nome, id e capacidade",
-                texto.contains("Lab IV (ID 3, 20 lugares)")
-                        && texto.contains("Lab V (ID 2, 35 lugares, inativa)"));
-        confere("a agenda de cada sala vem junto",
-                texto.contains("3T1") && texto.contains("3T2"));
-        confere("quem reservou aparece na linha do horario",
-                texto.contains("reservada por joao"));
+        // O catalogo (list_rooms) continua em texto: ele e uma leitura, e nao
+        // uma agenda. O dia vira GRADE, e quem o testa e salasComHorarioLivre.
+        JsonObject catalogo = new JsonObject();
+        com.google.gson.JsonArray lista = new com.google.gson.JsonArray();
+        JsonObject sala = salaComAgenda("3", "Lab IV", "20", "active", "3T1", "livre", null);
+        com.google.gson.JsonArray slotsDaSala = new com.google.gson.JsonArray();
+        slotsDaSala.add("3T1");
+        slotsDaSala.add("3T2");
+        sala.add("slots", slotsDaSala);
+        sala.addProperty("location", "Bloco C");
+        lista.add(sala);
+        catalogo.add("rooms", lista);
+
+        String texto = PainelSalas.catalogoPorExtenso(catalogo);
+        confere("o catalogo diz quantas salas existem",
+                texto.startsWith("1 sala(s) cadastrada(s):"));
+        confere("cada sala aparece com nome, id, capacidade e local",
+                texto.contains("Lab IV  (ID 3)")
+                        && texto.contains("20 lugares")
+                        && texto.contains("Bloco C"));
+        confere("os horarios de funcionamento vem por extenso, nao em codigo",
+                texto.contains("terça 13:00-14:40"));
 
         JsonObject vazia = new JsonObject();
         vazia.add("rooms", new com.google.gson.JsonArray());
         confere("banco sem sala nenhuma nao quebra a tela",
                 "Nenhuma sala cadastrada.".equals(
-                        PainelSalas.diaInteiroPorExtenso(vazia, "2027-01-05")));
+                        PainelSalas.catalogoPorExtenso(vazia)));
         confere("resposta sem 'rooms' tambem nao quebra",
-                PainelSalas.diaInteiroPorExtenso(new JsonObject(), "2027-01-05") != null);
+                PainelSalas.catalogoPorExtenso(new JsonObject()) != null);
 
         // As duas dicas que apontam para o botao certo quando o servidor
         // recusa a pergunta errada.
-        confere("o 400 do list_rooms aponta o \"dia de todas as salas\"",
-                Mensagens.dica("400", "list_rooms_response")
-                        .contains("dia de todas as salas"));
+        confere("o 400 do list_rooms aponta a grade do dia",
+                Mensagens.dica("400", "list_rooms_response").contains("aba Salas"));
         confere("o 400 do check_availability aponta o mesmo caminho",
                 Mensagens.dica("400", "check_availability_response")
-                        .contains("dia de todas as salas"));
+                        .contains("grade da aba Salas"));
     }
 
     static JsonObject salaComAgenda(String id, String nome, String capacidade, String estado,
@@ -529,15 +559,25 @@ public class VerificaCliente {
                 PainelReservas.avisoDePassado("", "13:00") == null
                         && PainelReservas.avisoDePassado("2027-01-01", "") == null);
 
-        // A coluna "Disponível" da tabela de salas: no passado, o verbo muda.
-        confere("sem filtro de passado, a coluna diz \"livre\"",
-                "livre".equals(PainelSalas.disponibilidade("true", false)));
-        confere("com filtro de passado, a coluna diz \"estava livre\"",
-                "estava livre".equals(PainelSalas.disponibilidade("true", true)));
-        confere("e \"estava indisponível\" quando ocupada",
-                "estava indisponível".equals(PainelSalas.disponibilidade("false", true)));
-        confere("sem 'available' continua travessao, passado ou nao",
-                "—".equals(PainelSalas.disponibilidade(null, true)));
+        // A agenda marca o que já passou: a do servidor não olha a hora, de
+        // propósito (regra 9.15), e sem a marca ela ofereceria um horário que
+        // o create_reservation recusa.
+        JsonObject comAgenda = new JsonObject();
+        comAgenda.addProperty("date", hoje.minusDays(1).toString());
+        com.google.gson.JsonArray agenda = new com.google.gson.JsonArray();
+        JsonObject bloco = new JsonObject();
+        bloco.addProperty("slot", "3T1");
+        bloco.addProperty("start_time", "13:00");
+        bloco.addProperty("end_time", "13:50");
+        bloco.addProperty("slot_status", "livre");
+        agenda.add(bloco);
+        comAgenda.add("agenda", agenda);
+        confere("a agenda de ontem marca o horario como ja passado",
+                PainelSalas.agendaPorExtenso(comAgenda).contains("(já passou)"));
+
+        comAgenda.addProperty("date", hoje.plusDays(7).toString());
+        confere("a agenda de um dia futuro nao marca nada",
+                !PainelSalas.agendaPorExtenso(comAgenda).contains("já passou"));
     }
 
     // ----------------------------------------------------------------- admin

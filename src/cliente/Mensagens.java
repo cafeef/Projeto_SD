@@ -112,13 +112,13 @@ final class Mensagens {
             // ela pode estar livre de manhã e ocupada à tarde. Quem responde
             // pelo dia inteiro é o read_room sem room_id (regra 9.16).
             return "Data, início e fim precisam ser informados juntos, ou nenhum dos três."
-                    + "\nPara ver o dia inteiro sem escolher horário,"
-                    + " use \"Ver o dia de todas as salas\".";
+                    + "\nPara ver o que está livre num dia, use a aba Salas:"
+                    + " escolha o dia e clique em \"Ver o dia\".";
         }
         if ("400".equals(status) && "check_availability_response".equals(op)) {
             return "Informe a sala, a data, o início e o fim."
                     + "\nPara ver um dia inteiro sem escolher sala nem horário,"
-                    + " use a aba Salas: \"Ver o dia de todas as salas\".";
+                    + " use a grade da aba Salas.";
         }
         if ("400".equals(status) && "create_reservation_response".equals(op)) {
             return "Confira a data, os horários de aula e se o grupo cabe na sala."

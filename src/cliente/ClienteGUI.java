@@ -153,8 +153,13 @@ public final class ClienteGUI extends JFrame {
     };
 
     private final PainelSalas painelSalas = new PainelSalas(canal);
-    private final PainelReservas painelReservas = new PainelReservas(canal);
+    // A grade do dia se recarrega quando uma reserva muda noutra aba: sem
+    // isso ela mostraria um bloco livre que acabou de deixar de ser.
+    private final PainelReservas painelReservas =
+            new PainelReservas(canal, () -> painelSalas.recarregar());
+    private final PainelAdminSalas painelAdminSalas = new PainelAdminSalas(canal);
     private final PainelUsuarios painelUsuarios = new PainelUsuarios(canal);
+    private Component abaAdminSalas;
 
     /** A aba de usuários, guardada para poder entrar e sair da tela. */
     private Component abaUsuarios;
@@ -300,15 +305,19 @@ public final class ClienteGUI extends JFrame {
     }
 
     /**
-     * As abas da sessão. A de usuários é montada aqui mas só entra na tela
-     * quando a sessão é de administrador -- ver {@link #aplicarPerfil()}.
+     * As abas da sessão. As de administrador são montadas aqui mas só entram
+     * na tela quando o perfil permite -- ver {@link #aplicarPerfil()}.
      */
     private JPanel montarAbasDaSessao() {
         abaUsuarios = comMargem(painelUsuarios);
+        abaAdminSalas = comMargem(painelAdminSalas);
 
-        abasSessao.addTab("  Meu cadastro  ", comMargem(painelMeuCadastro()));
+        // A ordem segue o que se faz primeiro: ver o dia, reservar, e só
+        // então o próprio cadastro. As abas de administração vêm por último,
+        // porque são as que menos gente usa.
         abasSessao.addTab("  Salas  ", comMargem(painelSalas));
-        abasSessao.addTab("  Reservas  ", comMargem(painelReservas));
+        abasSessao.addTab("  Minhas reservas  ", comMargem(painelReservas));
+        abasSessao.addTab("  Meu cadastro  ", comMargemRolavel(painelMeuCadastro()));
 
         // O logout fica FORA das abas, embaixo delas. Ele encerra a sessão
         // inteira, não o que está na aba aberta, e dentro de uma aba rolável
@@ -326,16 +335,28 @@ public final class ClienteGUI extends JFrame {
     }
 
     /**
-     * Respiro interno e rolagem para o conteúdo de uma aba.
+     * Uma aba com margem, SEM rolagem própria.
      *
-     * A rolagem não é enfeite: numa janela pequena, ou com a fonte do sistema
-     * maior, a aba de salas pede mais altura do que a janela tem. Sem o
-     * JScrollPane o layout simplesmente espreme o que estiver por último, e
-     * botões como "Sair" ou a própria tabela de salas desaparecem sem aviso --
-     * foi o que aconteceu antes desta mudança. Com ele, o que não cabe fica
-     * acessível rolando.
+     * As abas que têm tabela ou grade já rolam por dentro, e embrulhá-las
+     * numa segunda rolagem era o que fazia a roda do mouse parecer quebrada:
+     * sobre a tabela ela rolava a tabela, e a rolagem de fora -- a que levaria
+     * ao resto da aba -- nunca recebia o evento. Com a tabela ocupando o
+     * centro e os botões presos embaixo, não sobra o que rolar por fora.
      */
-    private JScrollPane comMargem(Component interno) {
+    private Component comMargem(Component interno) {
+        JPanel fora = new JPanel(new BorderLayout());
+        fora.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
+        fora.add(interno, BorderLayout.CENTER);
+        return fora;
+    }
+
+    /**
+     * Uma aba com margem E rolagem, para conteúdo que é só formulário.
+     *
+     * Aqui a rolagem de fora é a única da aba, então a roda do mouse faz o
+     * que se espera dela em qualquer ponto.
+     */
+    private Component comMargemRolavel(Component interno) {
         JPanel fora = new JPanel(new BorderLayout());
         fora.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
         fora.add(interno, BorderLayout.CENTER);
@@ -343,9 +364,6 @@ public final class ClienteGUI extends JFrame {
         JScrollPane rolagem = new JScrollPane(fora);
         rolagem.setBorder(BorderFactory.createEmptyBorder());
         rolagem.getVerticalScrollBar().setUnitIncrement(16);
-        // A barra horizontal aparece só quando precisa. Proibi-la pareceria
-        // mais limpo, mas forçaria o conteúdo na largura da janela, e aí o
-        // layout voltaria a encolher os campos até o tamanho mínimo deles.
         rolagem.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         return rolagem;
     }
@@ -360,9 +378,15 @@ public final class ClienteGUI extends JFrame {
     private void aplicarPerfil() {
         painelSalas.aplicarPerfil();
         painelReservas.aplicarPerfil();
-        int indice = abasSessao.indexOfComponent(abaUsuarios);
+        aba(abaAdminSalas, "  Administrar salas  ");
+        aba(abaUsuarios, "  Usuários  ");
+    }
+
+    /** Põe ou tira uma aba de administrador, conforme o perfil da sessão. */
+    private void aba(Component conteudo, String titulo) {
+        int indice = abasSessao.indexOfComponent(conteudo);
         if (ehAdmin && indice < 0) {
-            abasSessao.addTab("  Usuários  ", abaUsuarios);
+            abasSessao.addTab(titulo, conteudo);
         } else if (!ehAdmin && indice >= 0) {
             abasSessao.remove(indice);
         }
@@ -727,6 +751,7 @@ public final class ClienteGUI extends JFrame {
         ehAdmin = false;
         painelSalas.limpar();
         painelReservas.limpar();
+        painelAdminSalas.limpar();
         painelUsuarios.limpar();
         aplicarPerfil();
     }
@@ -789,6 +814,7 @@ public final class ClienteGUI extends JFrame {
         botaoSair.setEnabled(habilitado);
         painelSalas.habilitar(habilitado);
         painelReservas.habilitar(habilitado);
+        painelAdminSalas.habilitar(habilitado);
         painelUsuarios.habilitar(habilitado);
     }
 

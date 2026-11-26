@@ -91,21 +91,46 @@ que vem depois do início escolhido, o que elimina o `400` mais fácil de
 cometer. Os horários de funcionamento da sala também viraram uma lista, com o
 dia e a hora por extenso, no lugar de digitar `2M1, 2M2`.
 
-**Três perguntas parecidas, três operações diferentes** — confundi-las é o que
-faz a tela parecer quebrada:
+### A tela principal é a grade do dia
+
+A pergunta que se faz de verdade é *"quero reservar no dia 30; o que tem
+livre?"*. A aba **Salas** responde exatamente isso: escolhe-se o dia e aparece
+um quadro de horários — **uma coluna por sala, uma linha por aula**, cada bloco
+verde (livre), vermelho (com o nome de quem reservou), cinza (a sala não abre) ou
+riscado como *já passou*. Com **"Só salas com horário livre"** marcado, as salas
+sem nada a oferecer nem aparecem.
+
+**Clicar num bloco livre escolhe o horário**; clicar em outro bloco da mesma
+sala estende a seleção. Daí "Reservar este horário" abre o formulário com sala,
+dia e horário já preenchidos — sobra dizer o assunto. Nenhum horário é digitado
+em nenhum momento.
+
+Isso usa o `read_room` **sem `room_id`** (regra 9.16), que traz o dia inteiro
+numa requisição só. Foi para isso que a regra existe. As outras duas operações
+respondem outras perguntas, e confundi-las é o que fazia a tela parecer
+quebrada:
 
 | Pergunta | Operação | Precisa de |
 |---|---|---|
-| Esta sala está livre neste horário? | `check_availability` | sala + dia + início + fim |
-| Que salas servem neste horário? | `list_rooms` | o trio dia/início/fim, ou nenhum |
 | Como está o dia inteiro, sala por sala? | `read_room` sem `room_id` | só a data |
+| Esta sala está livre neste horário? | `check_availability` | sala + dia + início + fim |
+| Quais salas existem? | `list_rooms` | nada (o catálogo) |
 
-O trio do `list_rooms` é tudo ou nada (regra 9.11) porque, sem hora, *"a sala
-está livre no dia 30?"* não tem resposta única: ela pode estar livre de manhã e
-ocupada à tarde. Quem responde pelo dia inteiro é o `read_room` sem `room_id`
-(regra 9.16), no botão **"Ver o dia de todas as salas"**. O cliente confere o
-trio **antes** de mandar e aponta esse botão, em vez de colher um `400` que não
-diz o que fazer.
+O `list_rooms` aceitaria o trio dia/início/fim, mas é tudo ou nada (regra 9.11):
+sem hora, *"a sala está livre no dia 30?"* não tem resposta única — ela pode
+estar livre de manhã e ocupada à tarde. Por isso ele ficou sendo o **catálogo**,
+e quem responde pelo dia é a grade.
+
+**Os horários de funcionamento da sala também são blocos.** No formulário de
+cadastro há o quadro da semana inteira, seis dias por dezessete aulas: clicar
+num bloco marca aquele horário, clicar no nome do dia marca a coluna toda, e na
+hora marca a linha. Ninguém digita `2M1, 2M2, 3T1`.
+
+**Cada aba tem uma coisa só crescendo.** Os formulários abrem em janela própria,
+e não empilhados embaixo da tabela — antes consulta, tabela e formulário
+dividiam a mesma aba e nenhum dos três tinha espaço. E nenhuma aba com tabela
+tem rolagem por fora: duas rolagens aninhadas eram o motivo de a roda do mouse
+não levar a lugar nenhum.
 
 **Consultar o passado é válido** (regra 9.4) e o servidor responde de verdade —
 mas o que ele responde é sobre o que **foi**, não sobre o que dá para reservar
@@ -122,8 +147,8 @@ interoperabilidade. Quem pode explicar melhor é o cliente, que sabe o que a
 pessoa acabou de escolher: *"Esse dia já passou"* ou *"Esse horário de hoje já
 começou"*.
 
-No cliente, a aba **Usuários** só existe enquanto a sessão for de
-administrador, e o mesmo vale para o grupo de administração dentro da aba
+No cliente, as abas **Administrar salas** e **Usuários** só existem enquanto a
+sessão for de administrador, e o mesmo vale para o grupo de administração dentro da aba
 **Salas**. Isso é conveniência de interface, não segurança: esconder um botão
 apenas evita oferecer uma ação que o servidor responderia com 403.
 
@@ -246,7 +271,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 707 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 682 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
 operações do protocolo, a construção das telas, e a tela do cliente

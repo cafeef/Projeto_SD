@@ -9,39 +9,26 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import java.awt.BorderLayout;
-import java.awt.Dimension;
+import java.awt.Component;
 
 /**
- * Aba de reservas: consultar disponibilidade, reservar, listar e cancelar.
+ * A aba Reservas: as minhas reservas, para ler, alterar e cancelar.
  *
- * Cobre os itens b, c, d, e e f da EP-3.
+ * Criar reserva começa na aba Salas, clicando num bloco livre da grade do
+ * dia -- lá a sala, o dia e o horário já estão escolhidos, e sobra dizer o
+ * assunto. O botão "Nova reserva" daqui existe para quem já sabe sala e
+ * horário de cor e prefere digitar.
  *
- * O mesmo formulario cria e altera. Clicar numa reserva da tabela copia os
- * valores dela para os campos; dai "Reservar sala" cria uma nova e "Salvar
- * alteracoes" muda a selecionada. Dois formularios iguais lado a lado seriam
- * mais codigo para dizer a mesma coisa, e o campo que o usuario acabou de
- * preencher num deles estaria vazio no outro.
- *
- * Campo apagado quer dizer "nao alterar" (regra 2.11), e nao "apagar": o
- * formulario chega preenchido com a reserva, entao limpar um campo e o jeito
- * de dizer "esse aqui, deixa como esta".
- *
- * Trocar de sala ou de dia so virou possivel na v2.10 do protocolo (regra
- * 9.10). Ate a v2.9.2 as duas chaves respondiam 400, e a troca era cancelar e
- * criar outra reserva -- o que perdia o id e podia deixar a pessoa sem reserva
- * nenhuma se a sala nova ja tivesse dono naquele horario.
- *
- * A sala e identificada pelo ID, e nao por um combo de nomes, de proposito: o
- * ID e o que o protocolo manda no 'room_id', e a aba Salas ao lado mostra a
- * tabela inteira com os IDs. Um combo exigiria uma listagem a mais a cada vez
- * que esta aba abrisse, e ficaria desatualizado assim que um administrador
- * cadastrasse uma sala.
+ * Os formulários abrem em janela própria. Antes eles ficavam empilhados
+ * embaixo da tabela, e com consulta, tabela e formulário na mesma aba nenhum
+ * dos três tinha espaço.
  */
 final class PainelReservas extends JPanel {
 
@@ -49,103 +36,64 @@ final class PainelReservas extends JPanel {
 
     private final transient Canal canal;
 
-    // --- consulta de disponibilidade (item b) ---
-    private final JTextField dispSala = estreito(new JTextField(5));
-    private final JTextField dispData = estreito(new JTextField(10));
-    private final ComboDeHorario dispInicio = ComboDeHorario.inicio(ComboDeHorario.NAO_INFORMADO);
-    private final ComboDeHorario dispFim = ComboDeHorario.fim(ComboDeHorario.NAO_INFORMADO);
-    private final JButton botaoVerificar = new JButton("Verificar disponibilidade");
+    private final JTextField filtroData = estreito(new JTextField(11));
+    private final JTextField filtroSala = estreito(new JTextField(6));
+    private final JCheckBox todasAsReservas = new JCheckBox("Ver as de todos (admin)");
+    private final JButton botaoListar = new JButton("Atualizar lista");
+    private final JButton botaoLimparFiltros = new JButton("Limpar filtros");
 
-    // --- minhas reservas (item c) ---
     private final JTable tabela = Estilo.tabela("ID", "Sala", "Nome da sala", "Data",
             "Início", "Fim", "Assunto", "Participantes", "Quem reservou");
-    private final JTextField filtroData = estreito(new JTextField(10));
-    private final JTextField filtroSala = estreito(new JTextField(5));
-    private final JCheckBox todasAsReservas = new JCheckBox("Ver as de todos (admin)");
-    private final JButton botaoListar = Estilo.botaoPrincipal("Listar reservas");
-    private final JButton botaoLimparFiltros = new JButton("Limpar filtros");
-    private final JButton botaoDetalhes = new JButton("Ver detalhes da reserva");
+
+    private final JButton botaoNova = Estilo.botaoPrincipal("Nova reserva");
+    private final JButton botaoAlterar = new JButton("Alterar reserva");
+    private final JButton botaoDetalhes = new JButton("Ver detalhes");
     private final JButton botaoCancelar = Estilo.botaoDestrutivo("Cancelar reserva");
 
-    // --- nova reserva (item d) ---
-    private final JPanel grupoNova = Estilo.grupo("Nova reserva ou alteração");
-    private final JTextField novaSala = estreito(new JTextField(5));
-    private final JTextField novaData = estreito(new JTextField(10));
-    private final ComboDeHorario novaInicio = ComboDeHorario.inicio(ComboDeHorario.NAO_INFORMADO);
-    private final ComboDeHorario novaFim = ComboDeHorario.fim(ComboDeHorario.NAO_INFORMADO);
-    private final JTextField novaAssunto = estreito(new JTextField(26));
-    private final JTextField novaParticipantes = estreito(new JTextField(4));
-    private final JButton botaoReservar = Estilo.botaoPrincipal("Reservar sala");
-    private final JButton botaoSalvar = new JButton("Salvar alterações na reserva");
-    private final JButton botaoLimparForm = new JButton("Limpar formulário");
+    /** Avisado quando uma reserva muda, para a grade do dia se atualizar. */
+    private final transient Runnable aoMudarReservas;
 
-    PainelReservas(Canal canal) {
+    PainelReservas(Canal canal, Runnable aoMudarReservas) {
         this.canal = canal;
+        this.aoMudarReservas = aoMudarReservas;
         montar();
         ligarAcoes();
     }
 
-    // ----------------------------------------------------------------- layout
-
     private void montar() {
-        setLayout(new BorderLayout(0, 12));
+        setLayout(new BorderLayout(0, 10));
 
-        JPanel disponibilidade = Estilo.grupo("Consultar disponibilidade");
-        new Estilo.Grade(disponibilidade)
-                .campo("Sala (ID):", linha(dispSala,
-                        rotulo("Data (AAAA-MM-DD):"), dispData,
-                        rotulo("Início:"), dispInicio,
-                        rotulo("Fim:"), dispFim))
-                .linhaCheia(linha(botaoVerificar))
-                .dica("As listas trazem só começos e fins de aula da UTFPR;"
-                        + " o código da aula vem entre parênteses.")
-                .dica("A resposta é informativa — ela não segura a sala para você.");
+        JPanel filtros = Estilo.grupo("Minhas reservas");
+        JPanel linhaFiltros = linha(new JLabel("Dia:"), filtroData,
+                new JLabel("Sala (ID):"), filtroSala,
+                todasAsReservas, botaoListar, botaoLimparFiltros);
+        filtros.add(linhaFiltros);
 
         JScrollPane rolagem = new JScrollPane(tabela);
-        rolagem.setPreferredSize(new Dimension(640, 170));
 
-        JPanel filtros = linha(filtroData, rotulo("Sala (ID):"), filtroSala,
-                todasAsReservas, botaoListar, botaoLimparFiltros);
+        JPanel acoes = new JPanel();
+        acoes.setLayout(new BoxLayout(acoes, BoxLayout.X_AXIS));
+        acoes.add(botaoNova);
+        acoes.add(Box.createHorizontalStrut(8));
+        acoes.add(botaoAlterar);
+        acoes.add(Box.createHorizontalStrut(8));
+        acoes.add(botaoDetalhes);
+        acoes.add(Box.createHorizontalGlue());
+        acoes.add(botaoCancelar);
 
-        JPanel acoes = linha(botaoDetalhes, botaoCancelar);
-
-        JPanel lista = Estilo.grupo("Minhas reservas");
-        lista.setLayout(new BorderLayout(0, 8));
-        JPanel cabecalho = new JPanel(new BorderLayout());
-        new Estilo.Grade(cabecalho).campo("Data:", filtros);
-        lista.add(cabecalho, BorderLayout.NORTH);
-        lista.add(rolagem, BorderLayout.CENTER);
-        lista.add(acoes, BorderLayout.SOUTH);
-
-        JPanel botoesNova = new JPanel();
-        botoesNova.setLayout(new BoxLayout(botoesNova, BoxLayout.X_AXIS));
-        botoesNova.add(botaoReservar);
-        botoesNova.add(Box.createHorizontalStrut(8));
-        botoesNova.add(botaoSalvar);
-        botoesNova.add(Box.createHorizontalStrut(8));
-        botoesNova.add(botaoLimparForm);
-        botoesNova.add(Box.createHorizontalGlue());
-
-        new Estilo.Grade(grupoNova)
-                .campo("Sala (ID):", linha(novaSala,
-                        rotulo("Data (AAAA-MM-DD):"), novaData,
-                        rotulo("Início:"), novaInicio,
-                        rotulo("Fim:"), novaFim))
-                .campo("Assunto:", linha(novaAssunto,
-                        rotulo("Participantes:"), novaParticipantes))
-                .linhaCheia(botoesNova)
-                .dica("Assunto sem acento, até 60 caracteres.")
-                .dica("Participantes não pode passar da capacidade da sala.")
-                .dica("Clique numa reserva da tabela para copiá-la para cá e alterá-la.")
-                .dica("Ao alterar, campo vazio ou \"(não informado)\" mantém o que está lá.")
-                .dica("Adiantar o fim libera o resto do horário sem cancelar a reserva.");
-
-        add(disponibilidade, BorderLayout.NORTH);
-        add(lista, BorderLayout.CENTER);
-        add(grupoNova, BorderLayout.SOUTH);
+        add(filtros, BorderLayout.NORTH);
+        add(rolagem, BorderLayout.CENTER);
+        add(acoes, BorderLayout.SOUTH);
     }
 
-    private static JPanel linha(java.awt.Component... componentes) {
+    /** Trava a largura do campo na que ele pede -- ver a nota em PainelSalas. */
+    private static JTextField estreito(JTextField campo) {
+        campo.setMaximumSize(campo.getPreferredSize());
+        campo.setMinimumSize(campo.getPreferredSize());
+        return campo;
+    }
+
+    private static JPanel linha(Component... componentes) {
         JPanel p = new JPanel();
         p.setLayout(new BoxLayout(p, BoxLayout.X_AXIS));
         for (int i = 0; i < componentes.length; i++) {
@@ -158,17 +106,20 @@ final class PainelReservas extends JPanel {
         return p;
     }
 
-    private static javax.swing.JLabel rotulo(String texto) {
-        return new javax.swing.JLabel(texto);
+    private void ligarAcoes() {
+        botaoListar.addActionListener(e -> listar(true));
+        botaoLimparFiltros.addActionListener(e -> {
+            filtroData.setText("");
+            filtroSala.setText("");
+            listar(false);
+        });
+        botaoNova.addActionListener(e -> nova());
+        botaoAlterar.addActionListener(e -> alterar());
+        botaoDetalhes.addActionListener(e -> verDetalhes());
+        botaoCancelar.addActionListener(e -> cancelar());
     }
 
-    /** Minimo igual ao preferido: sem isso o GridBagLayout encolhe o campo a 23px. */
-    private static JTextField estreito(JTextField campo) {
-        campo.setMinimumSize(campo.getPreferredSize());
-        return campo;
-    }
-
-    /** O "ver as de todos" so existe para admin: o scope "all" responde 403 aos demais. */
+    /** O scope "all" é de admin: pedi-lo sem perfil responde 403 (regra 9.9). */
     void aplicarPerfil() {
         todasAsReservas.setVisible(canal.ehAdmin());
         if (!canal.ehAdmin()) {
@@ -179,69 +130,18 @@ final class PainelReservas extends JPanel {
     }
 
     void habilitar(boolean habilitado) {
-        botaoVerificar.setEnabled(habilitado);
         botaoListar.setEnabled(habilitado);
+        botaoNova.setEnabled(habilitado);
+        botaoAlterar.setEnabled(habilitado);
         botaoDetalhes.setEnabled(habilitado);
         botaoCancelar.setEnabled(habilitado);
-        botaoReservar.setEnabled(habilitado);
-        botaoSalvar.setEnabled(habilitado);
     }
 
     void limpar() {
         Estilo.modeloDe(tabela).setRowCount(0);
-        limparFormulario();
     }
 
     // ------------------------------------------------------------------ ações
-
-    private void ligarAcoes() {
-        botaoVerificar.addActionListener(e -> verificar());
-        botaoListar.addActionListener(e -> listar(true));
-        botaoLimparFiltros.addActionListener(e -> {
-            filtroData.setText("");
-            filtroSala.setText("");
-            listar(false);
-        });
-        botaoDetalhes.addActionListener(e -> verDetalhes());
-        botaoCancelar.addActionListener(e -> cancelar());
-        botaoReservar.addActionListener(e -> reservar());
-        botaoSalvar.addActionListener(e -> salvar());
-        botaoLimparForm.addActionListener(e -> {
-            tabela.clearSelection();
-            limparFormulario();
-        });
-        tabela.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) {
-                carregarSelecionada();
-            }
-        });
-    }
-
-    /** Item b: pergunta se a sala está livre naquele recorte. */
-    private void verificar() {
-        // O check_availability exige sala, dia E horário (os seis campos são
-        // required no protocolo): ele responde "esta sala está livre NESTE
-        // recorte?". Sem isso o servidor responde "Dados em formato
-        // invalido", que não diz o que falta nem onde está o que a pessoa
-        // queria -- o dia inteiro de todas as salas fica na aba Salas, em
-        // "Ver o dia de todas as salas" (regra 9.16).
-        if (dispSala.getText().isBlank() || dispData.getText().isBlank()
-                || dispInicio.hora().isEmpty() || dispFim.hora().isEmpty()) {
-            canal.erro("Para consultar a disponibilidade, informe a sala, a data,"
-                    + " o início e o fim.\n\nPara ver um dia inteiro sem escolher sala"
-                    + " nem horário, use a aba Salas:\n\"Ver o dia de todas as salas\".");
-            return;
-        }
-        canal.trocar(requisicaoDeDisponibilidade(canal.token(), dispSala.getText(),
-                dispData.getText(), dispInicio.hora(), dispFim.hora()), resposta -> {
-            if (!"200".equals(campo(resposta, "status"))) {
-                canal.informar(resposta);
-                return;
-            }
-            JOptionPane.showMessageDialog(this, textoDaDisponibilidade(resposta),
-                    "Disponibilidade da sala", JOptionPane.INFORMATION_MESSAGE);
-        });
-    }
 
     /** Item c: as reservas do usuário (ou de todos, para o admin). */
     private void listar(boolean avisarSeVazio) {
@@ -255,68 +155,74 @@ final class PainelReservas extends JPanel {
         });
     }
 
-    /** Item d: cria a reserva com assunto e número de participantes. */
-    private void reservar() {
-        // O protocolo responde 400 "Dados da reserva em formato invalido" a
-        // qualquer problema de formato, sem dizer qual. Para o horario que ja
-        // passou -- de longe o erro mais comum -- a tela diz antes, com todas
-        // as letras, em vez de deixar a pessoa adivinhar o que esta errado.
-        // Ao CRIAR, o vazio nao tem o sentido de "manter" que tem ao alterar:
-        // nao ha horario anterior. Dizer isso aqui e melhor do que mandar ""
-        // e receber de volta "Dados da reserva em formato invalido".
-        if (novaInicio.hora().isEmpty() || novaFim.hora().isEmpty()) {
-            canal.erro("Escolha o horário de início e o de fim da reserva.");
+    /** Item d: reserva digitada, para quem já sabe sala e horário. */
+    private void nova() {
+        FormularioDeReserva form = new FormularioDeReserva();
+        if (!form.mostrar(this, "Nova reserva", false)) {
             return;
         }
-        String passado = avisoDePassado(novaData.getText(), novaInicio.hora());
-        if (passado != null) {
-            canal.erro(passado);
+        String impedimento = impedimento(form.data(), form.inicio(), form.fim());
+        if (impedimento != null) {
+            canal.erro(impedimento);
             return;
         }
-        canal.trocar(requisicaoDeReserva(canal.token(), novaSala.getText(), novaData.getText(),
-                novaInicio.hora(), novaFim.hora(), novaAssunto.getText(),
-                novaParticipantes.getText()), resposta -> {
+        canal.trocar(requisicaoDeReserva(canal.token(), form.sala(), form.data(),
+                form.inicio(), form.fim(), form.assunto(), form.participantes()), resposta -> {
             canal.informar(resposta);
             if ("201".equals(campo(resposta, "status"))) {
-                limparFormulario();
                 listar(false);
+                avisarMudanca();
             }
         });
     }
 
     /**
-     * Item e: altera a reserva selecionada com o que esta no formulario.
+     * Item e: alterar a reserva selecionada.
      *
-     * Trocar de sala, de dia, de horario, de assunto ou de numero de
-     * participantes -- tudo numa requisicao so (regra 9.10). Adiantar o fim e
-     * o "UC libera a sala" da planilha: a sala volta a ficar livre no resto do
-     * horario sem a reserva ser cancelada.
+     * Campo em branco mantém o valor (regra 2.11). Trocar de sala ou de dia
+     * numa requisição só passou a ser possível na v2.10 do protocolo; antes
+     * era cancelar e criar outra, o que perdia o id e podia deixar a pessoa
+     * sem reserva nenhuma se a sala nova já tivesse dono no horário.
      */
-    private void salvar() {
-        String id = idSelecionado();
-        if (id == null) {
+    private void alterar() {
+        int linha = tabela.getSelectedRow();
+        if (linha < 0) {
+            canal.erro("Selecione uma reserva na tabela para alterar.");
             return;
         }
-        String passado = avisoDePassado(novaData.getText(), novaInicio.hora());
-        if (passado != null) {
-            canal.erro(passado);
+        var modelo = Estilo.modeloDe(tabela);
+        String id = texto(modelo.getValueAt(linha, 0));
+
+        FormularioDeReserva form = new FormularioDeReserva();
+        form.preencher(texto(modelo.getValueAt(linha, 1)), texto(modelo.getValueAt(linha, 3)),
+                texto(modelo.getValueAt(linha, 4)), texto(modelo.getValueAt(linha, 5)),
+                texto(modelo.getValueAt(linha, 6)), texto(modelo.getValueAt(linha, 7)));
+
+        if (!form.mostrar(this, "Alterar reserva " + id, true)) {
             return;
         }
-        canal.trocar(requisicaoDeAlteracao(canal.token(), id, novaSala.getText(),
-                novaData.getText(), novaInicio.hora(), novaFim.hora(),
-                novaAssunto.getText(), novaParticipantes.getText()), resposta -> {
+        String impedimento = impedimento(form.data(), form.inicio(), form.fim());
+        if (impedimento != null) {
+            canal.erro(impedimento);
+            return;
+        }
+        canal.trocar(requisicaoDeAlteracao(canal.token(), id, form.sala(), form.data(),
+                form.inicio(), form.fim(), form.assunto(), form.participantes()), resposta -> {
             canal.informar(resposta);
             if ("200".equals(campo(resposta, "status"))) {
                 listar(false);
+                avisarMudanca();
             }
         });
     }
 
     private void verDetalhes() {
-        String id = idSelecionado();
-        if (id == null) {
+        int linha = tabela.getSelectedRow();
+        if (linha < 0) {
+            canal.erro("Selecione uma reserva na tabela.");
             return;
         }
+        String id = texto(Estilo.modeloDe(tabela).getValueAt(linha, 0));
         canal.trocar(requisicaoDeLeitura(canal.token(), id), resposta -> {
             if (!"200".equals(campo(resposta, "status"))) {
                 canal.informar(resposta);
@@ -327,14 +233,22 @@ final class PainelReservas extends JPanel {
         });
     }
 
-    /** Item f: cancela a reserva selecionada, sempre com confirmação. */
+    /** Item f: cancelar, sempre com confirmação. */
     private void cancelar() {
-        String id = idSelecionado();
-        if (id == null) {
+        int linha = tabela.getSelectedRow();
+        if (linha < 0) {
+            canal.erro("Selecione uma reserva na tabela para cancelar.");
             return;
         }
+        var modelo = Estilo.modeloDe(tabela);
+        String id = texto(modelo.getValueAt(linha, 0));
         int escolha = JOptionPane.showConfirmDialog(this,
-                "Cancelar a reserva " + id + "? A sala volta a ficar livre nesse horário.",
+                "Cancelar a reserva " + id + " ("
+                        + texto(modelo.getValueAt(linha, 2)) + ", "
+                        + texto(modelo.getValueAt(linha, 3)) + " "
+                        + texto(modelo.getValueAt(linha, 4)) + "-"
+                        + texto(modelo.getValueAt(linha, 5)) + ")?\n\n"
+                        + "A sala volta a ficar livre nesse horário.",
                 "Cancelar reserva", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (escolha != JOptionPane.YES_OPTION) {
             return;
@@ -343,51 +257,15 @@ final class PainelReservas extends JPanel {
             canal.informar(resposta);
             if ("200".equals(campo(resposta, "status"))) {
                 listar(false);
+                avisarMudanca();
             }
         });
     }
 
-    /**
-     * O id da linha selecionada, ou null -- avisando quem esqueceu de escolher.
-     *
-     * Sem o aviso, o botao pareceria quebrado: o usuario clicaria e nada
-     * aconteceria, sem explicacao nenhuma.
-     */
-    private String idSelecionado() {
-        int linha = tabela.getSelectedRow();
-        if (linha < 0) {
-            JOptionPane.showMessageDialog(this,
-                    "Selecione uma reserva na tabela primeiro.",
-                    "Nenhuma reserva selecionada", JOptionPane.WARNING_MESSAGE);
-            return null;
+    private void avisarMudanca() {
+        if (aoMudarReservas != null) {
+            aoMudarReservas.run();
         }
-        return texto(Estilo.modeloDe(tabela).getValueAt(linha, 0));
-    }
-
-    /** Copia a reserva selecionada para o formulário, como ponto de partida. */
-    private void carregarSelecionada() {
-        int linha = tabela.getSelectedRow();
-        if (linha < 0) {
-            return;
-        }
-        var modelo = Estilo.modeloDe(tabela);
-        novaSala.setText(texto(modelo.getValueAt(linha, 1)));
-        novaData.setText(texto(modelo.getValueAt(linha, 3)));
-        // O início antes do fim: a lista de fins só mostra o que vem depois
-        // do início escolhido, então ela precisa saber do início primeiro.
-        novaInicio.selecionarHora(texto(modelo.getValueAt(linha, 4)));
-        novaFim.selecionarHora(texto(modelo.getValueAt(linha, 5)));
-        novaAssunto.setText(texto(modelo.getValueAt(linha, 6)));
-        novaParticipantes.setText(texto(modelo.getValueAt(linha, 7)));
-    }
-
-    private void limparFormulario() {
-        novaSala.setText("");
-        novaData.setText("");
-        novaInicio.selecionarHora("");
-        novaFim.selecionarHora("");
-        novaAssunto.setText("");
-        novaParticipantes.setText("");
     }
 
     private void preencherTabela(JsonObject resposta, boolean avisarSeVazio) {
@@ -409,19 +287,32 @@ final class PainelReservas extends JPanel {
         }
     }
 
+    // ----------------------------------------------- o que a tela barra antes
+
     /**
-     * Diz, em português, que o horário escolhido já passou -- ou null quando
-     * ele ainda não passou, ou quando não dá para saber.
+     * O que impede o pedido de sair, ou null quando não há nada.
      *
-     * Existe por causa da regra 9.3: reservar o que já começou responde 400
-     * "Dados da reserva em formato invalido", a mesma mensagem de um campo
-     * mal preenchido. O protocolo tem UMA mensagem de formato por operação, e
-     * trocá-la quebraria a interoperabilidade -- então quem explica melhor é o
-     * cliente, que sabe o que a pessoa acabou de digitar.
+     * O protocolo tem UMA mensagem de formato por operação, então o servidor
+     * responde "Dados da reserva em formato invalido" tanto para um campo mal
+     * preenchido quanto para o horário que já passou (regra 9.3) -- e trocar
+     * esse texto quebraria a interoperabilidade. Quem pode explicar melhor é
+     * o cliente, que sabe o que a pessoa acabou de escolher.
      *
-     * Data inválida devolve null de propósito: aí o erro é outro, e quem tem
-     * de respondê-lo é o servidor, com as regras dele.
+     * Horário em branco só é problema ao CRIAR: ao alterar, o vazio é o "" do
+     * protocolo, que mantém o que já está lá -- e aí o passado também não se
+     * aplica, porque o horário nem está mudando.
      */
+    static String impedimento(String data, String inicio, String fim) {
+        if (inicio.isEmpty() ^ fim.isEmpty()) {
+            return "Escolha o início e o fim juntos, ou deixe os dois como estão.";
+        }
+        if (inicio.isEmpty()) {
+            return null;
+        }
+        return Passado.aviso(data, inicio);
+    }
+
+    /** Mantido para quem só quer o aviso do passado. */
     static String avisoDePassado(String data, String inicio) {
         return Passado.aviso(data, inicio);
     }
@@ -453,13 +344,11 @@ final class PainelReservas extends JPanel {
     }
 
     /**
-     * Monta o update_reservation.
+     * Monta o update_reservation com as seis chaves alteráveis.
      *
-     * Todas as seis chaves alteraveis viajam, vazias quando o usuario apagou o
-     * campo -- "" e a forma de dizer "nao alterar" (regra 2.11). O 'room_id' e
-     * o 'date' sao opcionais no protocolo, mas manda-los vazios diz a mesma
-     * coisa que omiti-los e deixa a requisicao com um formato so, mais facil
-     * de conferir no terminal durante a avaliacao.
+     * 'room_id' e 'date' são opcionais desde a v2.10; mandá-los vazios diz o
+     * mesmo que omiti-los e deixa a requisição com um formato só, mais fácil
+     * de conferir no terminal durante a avaliação.
      */
     static JsonObject requisicaoDeAlteracao(String token, String reservationId, String sala,
                                             String data, String inicio, String fim,
@@ -479,9 +368,9 @@ final class PainelReservas extends JPanel {
     /**
      * Monta o list_reservations.
      *
-     * Regra 2.14: o filtro que o usuario nao preencheu e OMITIDO, e nao
-     * enviado vazio -- "" responderia 400. O 'scope' so viaja quando e "all",
-     * porque "mine" ja e o padrao do protocolo.
+     * Regra 2.14: o filtro que o usuário não preencheu é OMITIDO, e não
+     * enviado vazio -- "" responderia 400. O 'scope' só viaja quando é "all",
+     * porque "mine" já é o padrão do protocolo.
      */
     static JsonObject requisicaoDeListagem(String token, boolean todas, String data,
                                            String sala) {
@@ -511,16 +400,18 @@ final class PainelReservas extends JPanel {
 
     // ------------------------------------------------------ texto das respostas
 
-    /** A resposta do check_availability em uma frase, com o dia por extenso. */
+    /**
+     * A resposta do check_availability em uma frase.
+     *
+     * Consultar o passado é válido (regra 9.4) e o servidor responde de
+     * verdade -- mas no passado o verbo é outro: a sala ESTAVA livre. Dizer
+     * "está" sobre ontem convidaria a reservar o que não dá (regra 9.3).
+     */
     static String textoDaDisponibilidade(JsonObject resposta) {
         String data = campo(resposta, "date");
         String inicio = campo(resposta, "start_time");
         String quando = data + ", das " + inicio + " às " + campo(resposta, "end_time");
         boolean livre = "true".equals(campo(resposta, "available"));
-
-        // Consultar o passado é válido (regra 9.4) e o servidor responde de
-        // verdade -- mas no passado o verbo é outro: a sala ESTAVA livre.
-        // Dizer "está" sobre ontem convidaria a reservar o que não dá.
         String aviso = Passado.naoDaParaReservar(data, inicio);
 
         StringBuilder texto = new StringBuilder("A sala ")
@@ -535,7 +426,6 @@ final class PainelReservas extends JPanel {
         texto.append(quando).append(".\n\n");
 
         if (aviso != null) {
-            // O aviso vem antes do resto: é o que muda o que fazer agora.
             texto.append(aviso);
         } else if (livre) {
             texto.append("A consulta não reserva a sala — outra pessoa pode"

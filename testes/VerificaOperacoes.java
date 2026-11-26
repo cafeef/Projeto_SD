@@ -1468,10 +1468,17 @@ public class VerificaOperacoes {
 
             // Regra 9.14: o mesmo usuario pode ter duas reservas ao mesmo
             // tempo, desde que em salas diferentes.
-            checa("201 mesmo usuario com reservas simultaneas em salas diferentes (9.14)",
-                    c.envia(reqReserva(tokenComum, sala, outraTerca, "13:00", "13:50",
-                            "Em outra sala", "2")),
-                    "create_reservation_response", "201", "Reserva realizada com sucesso");
+            JsonObject simultanea = json(c.envia(reqReserva(tokenComum, sala, outraTerca,
+                    "13:00", "13:50", "Em outra sala", "2")));
+            confere("201 mesmo usuario com reservas simultaneas em salas diferentes (9.14)",
+                    "201".equals(campo(simultanea, "status")));
+            // Cancelar e obrigatorio: reserva ativa impede o delete_room da
+            // limpeza (regra 9.8), e a sala sobreviveria para atrapalhar as
+            // outras suites, que listam salas e contam o que acham.
+            if (campo(simultanea, "reservation_id") != null) {
+                c.envia(req("delete_reservation", "token", tokenComum,
+                        "reservation_id", campo(simultanea, "reservation_id")));
+            }
 
             // Limpeza das reservas destes testes.
             c.envia(req("delete_reservation", "token", tokenComum,
