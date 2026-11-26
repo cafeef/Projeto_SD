@@ -271,7 +271,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 693 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 704 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
 operações do protocolo, a construção das telas, e a tela do cliente
@@ -359,6 +359,32 @@ cancelada** — ela não é a "reserva ativa" da regra 9.1, que é a que ainda n
 **terminou** e depende da hora. As duas condições andam juntas em quase toda
 consulta, e por isso o modelo inverte o nome para `cancelada`: assim a palavra
 "ativa" não significa duas coisas diferentes conforme a linha do código.
+
+### Conexão caída não é sessão perdida
+
+O servidor fecha o socket com **300 s de inatividade**, mas **não invalida o
+token** (regra 1.9) — e a sessão continua valendo por até 30 minutos (regra
+3.3). Junte as duas e aparece uma armadilha: depois de uma pausa, o cliente
+perdia a conexão, descartava o token, e o login seguinte respondia `409
+"Usuario ja possui sessao ativa"`. Só restava esperar.
+
+O protocolo já resolve isso na **regra 1.11**: *o cliente abre outra conexão e
+reenvia a requisição com o mesmo token*. É o que o cliente faz agora — reabre e
+reenvia sozinho, e quem está usando não percebe nada. Reenviar é seguro porque a
+requisição que esbarrou no socket morto nunca foi respondida, e a própria regra
+diz que ela "não conta como concluída".
+
+Três defesas, na ordem em que entram:
+
+1. **a conexão se reabre sozinha** e a requisição vai de novo (regra 1.11);
+2. **"Desconectar" faz logout antes** de fechar, para a conta não ficar presa;
+3. se mesmo assim o login responder `409` e a tela ainda tiver o token, ela
+   **oferece encerrar a sessão anterior** — que é a única saída, já que o logout
+   exige justamente aquele token.
+
+Resta em aberto o caso que o protocolo também deixa em aberto (questão 7): se o
+cliente for **fechado** sem logout, o token se perde com ele e a conta fica
+presa por até 30 minutos.
 
 **Os cadastros sobrevivem ao desligamento do servidor; as sessões, não.** Toda
 vez que o servidor passa a escutar, as sessões anteriores são encerradas — afinal

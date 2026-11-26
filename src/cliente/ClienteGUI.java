@@ -502,7 +502,7 @@ public final class ClienteGUI extends JFrame {
 
     private void ligarAcoes() {
         botaoConectar.addActionListener(e -> conectar());
-        botaoDesconectar.addActionListener(e -> desconectar());
+        botaoDesconectar.addActionListener(e -> desconectarComLogout());
         botaoEntrar.addActionListener(e -> entrar());
         loginSenha.addActionListener(e -> entrar());
         botaoCadastrar.addActionListener(e -> cadastrar());
@@ -538,6 +538,7 @@ public final class ClienteGUI extends JFrame {
                     campoIp.setEnabled(false);
                     campoPorta.setEnabled(false);
                     habilitarOperacoes(true);
+                    retomarSessao();
                 });
             } catch (IOException e) {
                 registrar("falha ao conectar: " + e.getMessage());
@@ -546,6 +547,53 @@ public final class ClienteGUI extends JFrame {
                     erro("Não foi possível conectar em " + ip + ":" + porta + "\n" + e.getMessage());
                 });
             }
+        });
+    }
+
+    /**
+     * A conexao caiu e nao deu para reconectar.
+     *
+     * Guarda o token: a sessao continua viva no servidor por ate 30 minutos
+     * (regra 3.3), e e com esse token que se volta para ela -- ou se encerra
+     * ela, para poder entrar de novo. Joga-lo fora aqui era o que prendia a
+     * conta: sem token nao ha como fazer logout, e o login responde 409.
+     */
+    private void quedaDaConexao() {
+        conexao.fechar();
+        registrar("conexao perdida; o token foi guardado para retomar a sessao");
+        indicador.atualizar("Desconectado", false);
+        botaoConectar.setEnabled(true);
+        botaoDesconectar.setEnabled(false);
+        campoIp.setEnabled(true);
+        campoPorta.setEnabled(true);
+        habilitarOperacoes(false);
+        if (token != null) {
+            erro("A conexão com o servidor caiu.\n\n"
+                    + "Sua sessão continua ativa no servidor. Clique em Conectar"
+                    + " para voltar a ela — não precisa entrar de novo.");
+        }
+    }
+
+    /**
+     * Desconectar fechando a sessão antes, quando há uma.
+     *
+     * Fechar o socket não encerra a sessão: ela vive no servidor por até 30
+     * minutos (regra 3.3), e o login seguinte responderia 409 (regra 3.5).
+     * Quem desconecta de propósito quase sempre quer sair de verdade, então o
+     * logout vai junto -- e a conta fica livre na hora.
+     */
+    private void desconectarComLogout() {
+        // A conexao pode estar caida e a sessao viva: o logout vai pela
+        // conexao que a propria troca reabre (regra 1.11).
+        if (token == null || (!conexao.estaConectado() && !conexao.podeReconectar())) {
+            desconectar();
+            return;
+        }
+        JsonObject req = requisicao("logout");
+        req.addProperty("token", token);
+        trocar(req, resposta -> {
+            registrar("sessao encerrada antes de desconectar");
+            desconectar();
         });
     }
 
@@ -583,6 +631,43 @@ public final class ClienteGUI extends JFrame {
         });
     }
 
+    /**
+     * Volta para a sessão que ficou de pé no servidor, se houver uma.
+     *
+     * Regra 1.11: o token continua valendo numa conexão nova. Quem reconecta
+     * com um token guardado não precisa entrar de novo -- e, melhor, NÃO PODE
+     * entrar de novo enquanto aquela sessão existir (regra 3.5), então pedir
+     * a senha aqui seria pedir algo que daria 409.
+     *
+     * O read_user é o teste: 200 e a sessão vive; 401 e ela já expirou, aí o
+     * token morto é descartado e a tela volta para o login, como sempre.
+     */
+    private void retomarSessao() {
+        if (token == null) {
+            return;
+        }
+        registrar("retomando a sessao com o token guardado (regra 1.11)");
+        JsonObject req = requisicao("read_user");
+        req.addProperty("token", token);
+
+        trocar(req, resposta -> {
+            if (!"200".equals(campo(resposta, "status"))) {
+                // O 401 já é tratado em trocar(): descarta o token e mostra o
+                // login. Aqui não há mais nada a fazer.
+                return;
+            }
+            ehAdmin = ofereceAdmin(campo(resposta, "role"));
+            aplicarPerfil();
+            abasSessao.setSelectedIndex(0);
+            cartas.show(painelCartas, CARTAO_SESSAO);
+            preencherCadastro(resposta);
+            JOptionPane.showMessageDialog(this,
+                    "Você voltou para a sessão que já estava aberta, "
+                            + campo(resposta, "user") + ".",
+                    "Sessão retomada", JOptionPane.INFORMATION_MESSAGE);
+        });
+    }
+
     private void entrar() {
         JsonObject req = requisicao("login");
         req.addProperty("email", loginEmail.getText().trim());
@@ -599,9 +684,40 @@ public final class ClienteGUI extends JFrame {
                 abasSessao.setSelectedIndex(0);
                 cartas.show(painelCartas, CARTAO_SESSAO);
                 lerCadastro();
+            } else if ("409".equals(campo(resposta, "status")) && token != null) {
+                // Sessão única (regra 3.5): já existe uma sessão desta conta, e
+                // nós temos o token dela. Em vez de mandar esperar 30 minutos,
+                // oferece encerrá-la -- é a saída que o próprio protocolo dá.
+                oferecerEncerrarSessaoAnterior();
             } else {
                 informar(resposta);
             }
+        });
+    }
+
+    /**
+     * Oferece encerrar a sessão anterior quando o login responde 409.
+     *
+     * Sem isto, quem já tinha uma sessão ficava preso: o login responde 409 e
+     * o logout exige o token daquela sessão -- que é justamente o que a tela
+     * tem guardado.
+     */
+    private void oferecerEncerrarSessaoAnterior() {
+        int escolha = JOptionPane.showConfirmDialog(this,
+                "Esta conta já tem uma sessão aberta no servidor.\n\n"
+                        + "Encerrar a sessão anterior e entrar de novo?",
+                "Sessão já aberta", JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+        if (escolha != JOptionPane.YES_OPTION) {
+            return;
+        }
+        JsonObject req = requisicao("logout");
+        req.addProperty("token", token);
+        trocar(req, resposta -> {
+            token = null;
+            // Dá certo (200) ou o token já não valia (401): nos dois casos a
+            // sessão anterior não está mais no caminho.
+            entrar();
         });
     }
 
@@ -611,19 +727,24 @@ public final class ClienteGUI extends JFrame {
 
         trocar(req, resposta -> {
             if ("200".equals(campo(resposta, "status"))) {
-                dadosUsuario.setText(campo(resposta, "user"));
-                dadosEmail.setText(campo(resposta, "email"));
-                dadosPerfil.setText("admin".equals(campo(resposta, "role"))
-                        ? "Administrador" : "Usuário comum");
-                dadosCriadoEm.setText(campo(resposta, "created_at"));
-                // Um admin pode ter sido rebaixado por outro enquanto estava
-                // logado: o perfil é relido a cada leitura, não só no login.
-                ehAdmin = ofereceAdmin(campo(resposta, "role"));
-                aplicarPerfil();
+                preencherCadastro(resposta);
             } else {
                 informar(resposta);
             }
         });
+    }
+
+    /** Põe na tela os dados que o read_user devolveu. */
+    private void preencherCadastro(JsonObject resposta) {
+        dadosUsuario.setText(campo(resposta, "user"));
+        dadosEmail.setText(campo(resposta, "email"));
+        dadosPerfil.setText("admin".equals(campo(resposta, "role"))
+                ? "Administrador" : "Usuário comum");
+        dadosCriadoEm.setText(campo(resposta, "created_at"));
+        // Um admin pode ter sido rebaixado por outro enquanto estava logado:
+        // o perfil é relido a cada leitura, não só no login.
+        ehAdmin = ofereceAdmin(campo(resposta, "role"));
+        aplicarPerfil();
     }
 
     private void salvarAlteracoes() {
@@ -702,7 +823,9 @@ public final class ClienteGUI extends JFrame {
      * ao tratador, já de volta na EDT.
      */
     private void trocar(JsonObject requisicao, Consumer<JsonObject> aoResponder) {
-        if (!conexao.estaConectado()) {
+        // Conexao caida nao e motivo para recusar: ela se reabre sozinha
+        // (regra 1.11). Só quem nunca conectou precisa informar o servidor.
+        if (!conexao.estaConectado() && !conexao.podeReconectar()) {
             erro("Conecte-se ao servidor primeiro.");
             return;
         }
@@ -712,10 +835,16 @@ public final class ClienteGUI extends JFrame {
         rede.submit(() -> {
             try {
                 registrar("enviou:  " + json);
-                String resposta = conexao.enviarEReceber(json);
+                // Regras 1.9 e 1.11: se a conexao caiu por inatividade, a
+                // Conexao reabre e reenvia sozinha, com o MESMO token -- o
+                // servidor fecha o socket mas nao invalida a sessao.
+                String resposta = conexao.enviarComReconexao(json);
+                if (conexao.reconectouNaUltimaTroca()) {
+                    registrar("a conexao tinha caido; reaberta e reenviada (regra 1.11)");
+                }
                 if (resposta == null) {
-                    registrar("o servidor encerrou a conexao");
-                    SwingUtilities.invokeLater(this::desconectar);
+                    registrar("nao foi possivel reconectar");
+                    SwingUtilities.invokeLater(this::quedaDaConexao);
                     return;
                 }
                 registrar("recebeu: " + resposta);

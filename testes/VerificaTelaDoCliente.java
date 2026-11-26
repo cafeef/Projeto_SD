@@ -374,6 +374,44 @@ public class VerificaTelaDoCliente {
         confere("a sala das reservas e removida no fim",
                 esperar(() -> !textoDaTabela(tabelaSalas).contains(SALA_RESERVA)));
 
+        // ======== queda da conexao e sessao presa (regras 1.9, 1.11 e 3.5) ========
+        // O servidor fecha o socket com 300 s de inatividade, mas a sessao
+        // continua viva por ate 30 minutos. Fechar a conexao aqui reproduz
+        // exatamente o estado em que a proxima acao a encontra.
+        aba("Minhas reservas");
+        naEdt(() -> ((Conexao) ler("conexao")).fechar());
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Atualizar lista"));
+        confere("a acao depois da queda funciona, sem pedir login de novo",
+                esperar(() -> !algumDialogo("Falha na comunicação")
+                        && !algumDialogo("Conecte-se ao servidor")));
+        confere("e a sessao continua aberta (as abas nao sumiram)",
+                nomesDasAbas().contains("Minhas reservas"));
+
+        // Desconectar de proposito encerra a sessao antes, senao a conta
+        // ficaria presa por 30 minutos (regra 3.5).
+        limparDialogos();
+        clicar(botao("Desconectar"));
+        confere("desconectar volta para a tela de acesso",
+                esperar(() -> botao("Conectar").isEnabled()));
+        // A prova de que o logout foi junto vem logo abaixo: se a sessao
+        // tivesse ficado de pe, o login responderia 409 por ate 30 minutos.
+
+        // E a prova de que a conta ficou livre: entrar de novo, na hora.
+        limparDialogos();
+        clicar(botao("Conectar"));
+        confere("reconecta ao servidor", esperar(() -> botao("Desconectar").isEnabled()));
+        naEdt(() -> {
+            campo("loginEmail").setText("admin@admin.com");
+            ((JPasswordField) campo("loginSenha")).setText("admin");
+        });
+        limparDialogos();
+        clicar(botao("Entrar"));
+        confere("entra de novo na hora, sem 409 de sessao ativa",
+                esperar(() -> nomesDasAbas().contains("Salas")));
+        confere("e nao apareceu \"ja possui sessao ativa\"",
+                !algumDialogo("sessao ativa") && !algumDialogo("sessão ativa"));
+
         // --- logout, fora das abas ---
         limparDialogos();
         clicar(botao("Sair (logout)"));

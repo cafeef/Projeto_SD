@@ -36,6 +36,28 @@ public class VerificaInterfaces {
             confere("operacao sem handler devolve 400",
                     erro != null && erro.contains("Operacao desconhecida"));
 
+            // --- queda da conexao: regras 1.9 e 1.11 ---
+            // O servidor fecha o socket com 300 s de inatividade, mas NAO
+            // invalida o token. Fechar aqui reproduz o estado em que a
+            // proxima requisicao encontra a conexao: morta.
+            conexao.fechar();
+            confere("a conexao aparece como caida", !conexao.estaConectado());
+
+            String depoisDaQueda =
+                    conexao.enviarComReconexao("{\"op\":\"eco\",\"texto\":\"voltei\"}");
+            confere("a requisicao chega mesmo com a conexao caida (regra 1.11)",
+                    depoisDaQueda != null && depoisDaQueda.contains("\"echo\":\"VOLTEI\""));
+            confere("e a Conexao avisa que precisou reabrir",
+                    conexao.reconectouNaUltimaTroca());
+            confere("depois de reabrir, ela esta conectada de novo",
+                    conexao.estaConectado());
+
+            // Sem queda, nao ha reabertura -- o reenvio so acontece quando
+            // precisa, senao toda requisicao viraria duas no servidor.
+            conexao.enviarComReconexao("{\"op\":\"eco\",\"texto\":\"ok\"}");
+            confere("conexao de pe nao e reaberta a toa",
+                    !conexao.reconectouNaUltimaTroca());
+
             conexao.fechar();
             confere("fecha a conexao", !conexao.estaConectado());
         }
