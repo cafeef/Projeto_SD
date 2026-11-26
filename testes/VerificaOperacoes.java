@@ -645,9 +645,8 @@ public class VerificaOperacoes {
                     c.envia(req("read_room", "token", tokenComum, "room_id", "abc")),
                     "read_room_response", "400", "Dados em formato invalido");
 
-            checa("400 room_id ausente",
-                    c.envia(req("read_room", "token", tokenComum)),
-                    "read_room_response", "400", "Dados em formato invalido");
+            // O room_id ausente era 400 ate a v2.10. Desde a v2.11 ele le
+            // todas as salas (regra 9.16), e o caso esta testado mais abaixo.
 
             checa("404 sala inexistente",
                     c.envia(req("read_room", "token", tokenComum, "room_id", "999999999")),
@@ -882,6 +881,40 @@ public class VerificaOperacoes {
             checa("200 renomear a sala para o nome que ela ja tem (regra 2.15)",
                     adm.envia(reqAtualizaSala(tokenAdmin, roomId, nomeSala, "", "", "", "")),
                     "update_room_response", "200", "Sala atualizada com sucesso");
+
+            // --- read_room sem 'room_id' (regra 9.16, v2.11) ---
+            JsonObject todas = json(c.envia(req("read_room", "token", tokenComum)));
+            confere("read_room sem room_id devolve 200 com a lista de salas",
+                    "200".equals(campo(todas, "status"))
+                            && todas.has("count") && todas.has("rooms"));
+            confere("a contagem bate com o tamanho da lista",
+                    Integer.parseInt(campo(todas, "count"))
+                            == todas.getAsJsonArray("rooms").size());
+            confere("a sala de teste esta entre elas",
+                    todas.getAsJsonArray("rooms").toString().contains(nomeSala));
+            // Sem room_id nao ha sala para nao encontrar: 404 deixa de existir.
+            confere("sem room_id a resposta nunca e 404",
+                    !"404".equals(campo(todas, "status")));
+
+            // Com 'date', cada sala leva a propria agenda: o dia inteiro do
+            // campus numa requisicao so.
+            JsonObject todasComData = json(c.envia(req("read_room",
+                    "token", tokenComum, "date", "2026-12-01")));
+            confere("read_room sem room_id e com date responde 200",
+                    "200".equals(campo(todasComData, "status")));
+            confere("cada sala traz a propria agenda do dia",
+                    todasComData.getAsJsonArray("rooms").size() == 0
+                            || todasComData.getAsJsonArray("rooms").get(0)
+                                    .getAsJsonObject().has("agenda"));
+
+            // A chave ENVIADA fora do formato continua 400: o 200 com a lista
+            // vale so para quem nao mandou a chave.
+            checa("400 read_room com room_id torto (regra 9.16)",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", "abc")),
+                    "read_room_response", "400", "Dados em formato invalido");
+            checa("400 read_room com room_id vazio (regras 9.16 e 2.14)",
+                    c.envia(req("read_room", "token", tokenComum, "room_id", "")),
+                    "read_room_response", "400", "Dados em formato invalido");
 
             // Uma segunda sala, para o 409 de nome e para a listagem.
             String nomeOutra = "Sala " + nome();

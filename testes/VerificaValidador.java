@@ -149,6 +149,61 @@ public class VerificaValidador {
                     e.getMotivo() == Motivo.VAZIO);
         }
 
+        // --- a grade da UTFPR, usada pelas listas de escolha do cliente ---
+        confere("ha 17 inicios de aula na grade",
+                protocolo.Horarios.iniciosDeAula().size() == 17);
+        confere("ha 17 fins de aula na grade",
+                protocolo.Horarios.finsDeAula().size() == 17);
+        confere("o primeiro inicio e 07:30 e o ultimo fim e 23:00",
+                "07:30".equals(protocolo.Horarios.iniciosDeAula().get(0))
+                        && "23:00".equals(protocolo.Horarios.finsDeAula().get(16)));
+        // Todo valor oferecido pela lista tem que passar na regra 8.3, senao
+        // a tela ofereceria uma opcao que o servidor recusa com 400.
+        confere("todo inicio oferecido e inicio de aula de verdade",
+                protocolo.Horarios.iniciosDeAula().stream()
+                        .allMatch(h -> protocolo.Horarios.ehInicioDeAula(
+                                java.time.LocalTime.parse(h))));
+        confere("todo fim oferecido e fim de aula de verdade",
+                protocolo.Horarios.finsDeAula().stream()
+                        .allMatch(h -> protocolo.Horarios.ehFimDeAula(
+                                java.time.LocalTime.parse(h))));
+        confere("13:00 e o comeco de T1",
+                "T1".equals(protocolo.Horarios.aulaQueComecaEm("13:00")));
+        confere("13:50 e o fim de T1",
+                "T1".equals(protocolo.Horarios.aulaQueTerminaEm("13:50")));
+        confere("13:50 tambem e o comeco de T2",
+                "T2".equals(protocolo.Horarios.aulaQueComecaEm("13:50")));
+        confere("hora fora da grade nao tem aula",
+                protocolo.Horarios.aulaQueComecaEm("14:15") == null);
+
+        confere("a grade tem 6 dias e 102 horarios",
+                protocolo.Horarios.dias().size() == 6
+                        && protocolo.Horarios.todosOsSlots().size() == 102);
+        confere("todo horario da grade passa em ehSlot",
+                protocolo.Horarios.todosOsSlots().stream()
+                        .allMatch(protocolo.Horarios::ehSlot));
+        confere("o digito 3 e terca", "terça".equals(protocolo.Horarios.nomeDoDia('3')));
+
+        // --- resumo por extenso: o que a tabela de salas mostra ---
+        // Aulas seguidas viram um intervalo so.
+        confere("tres aulas seguidas viram um intervalo",
+                "terça 13:00-15:30".equals(protocolo.Horarios.resumoPorExtenso(
+                        java.util.List.of("3T1", "3T2", "3T3"))));
+        // T3 acaba 15:30 e T4 so comeca 15:50: o intervalo nao e aula, entao
+        // juntar as duas afirmaria que ha o que reservar das 15:30 as 15:50.
+        confere("o intervalo entre T3 e T4 separa os blocos",
+                "terça 13:00-15:30 · terça 15:50-16:40".equals(
+                        protocolo.Horarios.resumoPorExtenso(
+                                java.util.List.of("3T1", "3T2", "3T3", "3T4"))));
+        confere("dias diferentes nunca se juntam",
+                "segunda 07:30-08:20 · terça 07:30-08:20".equals(
+                        protocolo.Horarios.resumoPorExtenso(
+                                java.util.List.of("3M1", "2M1"))));
+        confere("lista vazia vira texto vazio",
+                "".equals(protocolo.Horarios.resumoPorExtenso(java.util.List.of())));
+        confere("lista nula nao quebra a tabela",
+                "".equals(protocolo.Horarios.resumoPorExtenso(null)));
+
         // --- erro de digitacao no nosso codigo falha alto, nao passa batido ---
         try {
             Validador.formatoValido("usuario", "joao");

@@ -179,11 +179,119 @@ public final class Horarios {
         return ordenados;
     }
 
+    /** Os nomes dos dias da grade, do digito '2' ao '7'. */
+    private static final String[] NOMES_DOS_DIAS =
+            {"segunda", "terça", "quarta", "quinta", "sexta", "sábado"};
+
+    /** Os digitos dos dias, de '2' (segunda) a '7' (sabado). */
+    public static List<Character> dias() {
+        return new ArrayList<>(DIAS.values());
+    }
+
+    /** O nome do dia a partir do digito: '3' vira "terça". */
+    public static String nomeDoDia(char digito) {
+        int indice = digito - '2';
+        return indice >= 0 && indice < NOMES_DOS_DIAS.length ? NOMES_DOS_DIAS[indice] : "?";
+    }
+
+    /**
+     * Os horarios em que alguma aula COMECA, na ordem da tabela e em "HH:mm".
+     *
+     * E a lista que o cliente oferece para escolher um 'start_time': qualquer
+     * outro valor e 400 pela regra 8.3, entao digitar a mao so da a quem usa a
+     * chance de errar.
+     */
+    public static List<String> iniciosDeAula() {
+        List<String> horas = new ArrayList<>();
+        for (LocalTime[] faixa : AULAS.values()) {
+            horas.add(faixa[0].toString());
+        }
+        return horas;
+    }
+
+    /** Os horarios em que alguma aula TERMINA, na ordem da tabela (regra 8.3). */
+    public static List<String> finsDeAula() {
+        List<String> horas = new ArrayList<>();
+        for (LocalTime[] faixa : AULAS.values()) {
+            horas.add(faixa[1].toString());
+        }
+        return horas;
+    }
+
+    /** O codigo da aula que comeca nessa hora ("13:00" vira "T1"), ou null. */
+    public static String aulaQueComecaEm(String hora) {
+        for (Map.Entry<String, LocalTime[]> e : AULAS.entrySet()) {
+            if (e.getValue()[0].toString().equals(hora)) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** O codigo da aula que termina nessa hora ("13:50" vira "T1"), ou null. */
+    public static String aulaQueTerminaEm(String hora) {
+        for (Map.Entry<String, LocalTime[]> e : AULAS.entrySet()) {
+            if (e.getValue()[1].toString().equals(hora)) {
+                return e.getKey();
+            }
+        }
+        return null;
+    }
+
+    /** Todos os horarios da grade, de "2M1" a "7N5", na ordem dia + aula. */
+    public static List<String> todosOsSlots() {
+        List<String> slots = new ArrayList<>();
+        for (Character dia : DIAS.values()) {
+            for (String aula : AULAS.keySet()) {
+                slots.add(dia + aula);
+            }
+        }
+        return slots;
+    }
+
+    /**
+     * Uma lista de horarios em texto curto, agrupando as aulas SEGUIDAS.
+     *
+     * "3T1", "3T2", "3T3" vira "terça 13:00-15:30", e nao tres pedacos. Duas
+     * aulas so se juntam quando uma termina exatamente onde a outra comeca:
+     * T3 acaba 15:30 e T4 so comeca 15:50, entao elas ficam separadas -- o
+     * intervalo nao e aula, e dizer "13:00-16:40" afirmaria que a sala esta
+     * reservavel num tempo em que nao ha nada para reservar.
+     *
+     * Serve a tabela de salas, onde a lista crua de codigos nao cabe e nao diz
+     * nada a quem nao decorou a grade.
+     */
+    public static String resumoPorExtenso(List<String> slots) {
+        if (slots == null || slots.isEmpty()) {
+            return "";
+        }
+        List<String> ordenados = ordenar(slots);
+        StringBuilder texto = new StringBuilder();
+        int i = 0;
+        while (i < ordenados.size()) {
+            String inicioDoBloco = ordenados.get(i);
+            char dia = diaDe(inicioDoBloco);
+            LocalTime comeco = inicioDe(inicioDoBloco);
+            LocalTime termino = fimDe(inicioDoBloco);
+            int j = i + 1;
+            while (j < ordenados.size()
+                    && diaDe(ordenados.get(j)) == dia
+                    && inicioDe(ordenados.get(j)).equals(termino)) {
+                termino = fimDe(ordenados.get(j));
+                j++;
+            }
+            if (texto.length() > 0) {
+                texto.append(" · ");
+            }
+            texto.append(nomeDoDia(dia)).append(' ')
+                    .append(comeco).append('-').append(termino);
+            i = j;
+        }
+        return texto.toString();
+    }
+
     /** "3T1" lido por gente: "terça, 13:00-13:50". */
     public static String porExtenso(String slot) {
-        String[] nomes = {"segunda", "terça", "quarta", "quinta", "sexta", "sábado"};
-        int indice = diaDe(slot) - '2';
-        String dia = indice >= 0 && indice < nomes.length ? nomes[indice] : "?";
-        return dia + ", " + inicioDe(slot) + "-" + fimDe(slot);
+        return nomeDoDia(diaDe(slot)) + ", " + inicioDe(slot) + "-" + fimDe(slot);
     }
 }

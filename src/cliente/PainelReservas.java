@@ -52,8 +52,8 @@ final class PainelReservas extends JPanel {
     // --- consulta de disponibilidade (item b) ---
     private final JTextField dispSala = estreito(new JTextField(5));
     private final JTextField dispData = estreito(new JTextField(10));
-    private final JTextField dispInicio = estreito(new JTextField(5));
-    private final JTextField dispFim = estreito(new JTextField(5));
+    private final ComboDeHorario dispInicio = ComboDeHorario.inicio(ComboDeHorario.NAO_INFORMADO);
+    private final ComboDeHorario dispFim = ComboDeHorario.fim(ComboDeHorario.NAO_INFORMADO);
     private final JButton botaoVerificar = new JButton("Verificar disponibilidade");
 
     // --- minhas reservas (item c) ---
@@ -71,8 +71,8 @@ final class PainelReservas extends JPanel {
     private final JPanel grupoNova = Estilo.grupo("Nova reserva ou alteração");
     private final JTextField novaSala = estreito(new JTextField(5));
     private final JTextField novaData = estreito(new JTextField(10));
-    private final JTextField novaInicio = estreito(new JTextField(5));
-    private final JTextField novaFim = estreito(new JTextField(5));
+    private final ComboDeHorario novaInicio = ComboDeHorario.inicio(ComboDeHorario.NAO_INFORMADO);
+    private final ComboDeHorario novaFim = ComboDeHorario.fim(ComboDeHorario.NAO_INFORMADO);
     private final JTextField novaAssunto = estreito(new JTextField(26));
     private final JTextField novaParticipantes = estreito(new JTextField(4));
     private final JButton botaoReservar = Estilo.botaoPrincipal("Reservar sala");
@@ -97,8 +97,8 @@ final class PainelReservas extends JPanel {
                         rotulo("Início:"), dispInicio,
                         rotulo("Fim:"), dispFim))
                 .linhaCheia(linha(botaoVerificar))
-                .dica("Início e fim são horários de aula da UTFPR:"
-                        + " 13:00–14:40 são as duas primeiras da tarde.")
+                .dica("As listas trazem só começos e fins de aula da UTFPR;"
+                        + " o código da aula vem entre parênteses.")
                 .dica("A resposta é informativa — ela não segura a sala para você.");
 
         JScrollPane rolagem = new JScrollPane(tabela);
@@ -137,7 +137,7 @@ final class PainelReservas extends JPanel {
                 .dica("Assunto sem acento, até 60 caracteres.")
                 .dica("Participantes não pode passar da capacidade da sala.")
                 .dica("Clique numa reserva da tabela para copiá-la para cá e alterá-la.")
-                .dica("Ao alterar, campo apagado quer dizer \"deixa como está\".")
+                .dica("Ao alterar, campo vazio ou \"(não informado)\" mantém o que está lá.")
                 .dica("Adiantar o fim libera o resto do horário sem cancelar a reserva.");
 
         add(disponibilidade, BorderLayout.NORTH);
@@ -220,7 +220,7 @@ final class PainelReservas extends JPanel {
     /** Item b: pergunta se a sala está livre naquele recorte. */
     private void verificar() {
         canal.trocar(requisicaoDeDisponibilidade(canal.token(), dispSala.getText(),
-                dispData.getText(), dispInicio.getText(), dispFim.getText()), resposta -> {
+                dispData.getText(), dispInicio.hora(), dispFim.hora()), resposta -> {
             if (!"200".equals(campo(resposta, "status"))) {
                 canal.informar(resposta);
                 return;
@@ -244,8 +244,24 @@ final class PainelReservas extends JPanel {
 
     /** Item d: cria a reserva com assunto e número de participantes. */
     private void reservar() {
+        // O protocolo responde 400 "Dados da reserva em formato invalido" a
+        // qualquer problema de formato, sem dizer qual. Para o horario que ja
+        // passou -- de longe o erro mais comum -- a tela diz antes, com todas
+        // as letras, em vez de deixar a pessoa adivinhar o que esta errado.
+        // Ao CRIAR, o vazio nao tem o sentido de "manter" que tem ao alterar:
+        // nao ha horario anterior. Dizer isso aqui e melhor do que mandar ""
+        // e receber de volta "Dados da reserva em formato invalido".
+        if (novaInicio.hora().isEmpty() || novaFim.hora().isEmpty()) {
+            canal.erro("Escolha o horário de início e o de fim da reserva.");
+            return;
+        }
+        String passado = avisoDePassado(novaData.getText(), novaInicio.hora());
+        if (passado != null) {
+            canal.erro(passado);
+            return;
+        }
         canal.trocar(requisicaoDeReserva(canal.token(), novaSala.getText(), novaData.getText(),
-                novaInicio.getText(), novaFim.getText(), novaAssunto.getText(),
+                novaInicio.hora(), novaFim.hora(), novaAssunto.getText(),
                 novaParticipantes.getText()), resposta -> {
             canal.informar(resposta);
             if ("201".equals(campo(resposta, "status"))) {
@@ -268,8 +284,13 @@ final class PainelReservas extends JPanel {
         if (id == null) {
             return;
         }
+        String passado = avisoDePassado(novaData.getText(), novaInicio.hora());
+        if (passado != null) {
+            canal.erro(passado);
+            return;
+        }
         canal.trocar(requisicaoDeAlteracao(canal.token(), id, novaSala.getText(),
-                novaData.getText(), novaInicio.getText(), novaFim.getText(),
+                novaData.getText(), novaInicio.hora(), novaFim.hora(),
                 novaAssunto.getText(), novaParticipantes.getText()), resposta -> {
             canal.informar(resposta);
             if ("200".equals(campo(resposta, "status"))) {
@@ -339,8 +360,10 @@ final class PainelReservas extends JPanel {
         var modelo = Estilo.modeloDe(tabela);
         novaSala.setText(texto(modelo.getValueAt(linha, 1)));
         novaData.setText(texto(modelo.getValueAt(linha, 3)));
-        novaInicio.setText(texto(modelo.getValueAt(linha, 4)));
-        novaFim.setText(texto(modelo.getValueAt(linha, 5)));
+        // O início antes do fim: a lista de fins só mostra o que vem depois
+        // do início escolhido, então ela precisa saber do início primeiro.
+        novaInicio.selecionarHora(texto(modelo.getValueAt(linha, 4)));
+        novaFim.selecionarHora(texto(modelo.getValueAt(linha, 5)));
         novaAssunto.setText(texto(modelo.getValueAt(linha, 6)));
         novaParticipantes.setText(texto(modelo.getValueAt(linha, 7)));
     }
@@ -348,8 +371,8 @@ final class PainelReservas extends JPanel {
     private void limparFormulario() {
         novaSala.setText("");
         novaData.setText("");
-        novaInicio.setText("");
-        novaFim.setText("");
+        novaInicio.selecionarHora("");
+        novaFim.selecionarHora("");
         novaAssunto.setText("");
         novaParticipantes.setText("");
     }
@@ -371,6 +394,40 @@ final class PainelReservas extends JPanel {
                     "Nenhuma reserva encontrada com esses filtros.",
                     "Consulta de reservas", JOptionPane.INFORMATION_MESSAGE);
         }
+    }
+
+    /**
+     * Diz, em português, que o horário escolhido já passou -- ou null quando
+     * ele ainda não passou, ou quando não dá para saber.
+     *
+     * Existe por causa da regra 9.3: reservar o que já começou responde 400
+     * "Dados da reserva em formato invalido", a mesma mensagem de um campo
+     * mal preenchido. O protocolo tem UMA mensagem de formato por operação, e
+     * trocá-la quebraria a interoperabilidade -- então quem explica melhor é o
+     * cliente, que sabe o que a pessoa acabou de digitar.
+     *
+     * Data inválida devolve null de propósito: aí o erro é outro, e quem tem
+     * de respondê-lo é o servidor, com as regras dele.
+     */
+    static String avisoDePassado(String data, String inicio) {
+        if (data == null || data.isBlank() || inicio == null || inicio.isBlank()) {
+            return null;
+        }
+        java.time.LocalDate dia;
+        java.time.LocalTime hora;
+        try {
+            dia = java.time.LocalDate.parse(data.trim());
+            hora = java.time.LocalTime.parse(inicio.trim());
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+        if (dia.atTime(hora).isAfter(java.time.LocalDateTime.now())) {
+            return null;
+        }
+        return dia.isBefore(java.time.LocalDate.now())
+                ? "Esse dia já passou: " + dia + ". Escolha uma data de hoje em diante."
+                : "Esse horário de hoje já começou (" + inicio
+                        + "). Escolha uma aula que ainda vai começar, ou outro dia.";
     }
 
     // ------------------------------------------------- montagem das requisições

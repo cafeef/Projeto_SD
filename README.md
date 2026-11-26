@@ -14,8 +14,8 @@ sockets TCP**, seguindo o protocolo definido em conjunto pela turma.
 | **EP-2** | Operações de administrador e CRUD de salas | ✅ completa, servidor e cliente |
 | **EP-3** | CRUD de reservas e controle de concorrência | ✅ completa, servidor e cliente |
 
-Tudo o que está entregue segue a **v2.10.0** do protocolo, e o testador oficial
-passa em **105 de 105**, sem nenhum teste pulado.
+Tudo o que está entregue segue a **v2.11.0** do protocolo, e o testador oficial
+passa em **107 de 107**, sem nenhum teste pulado.
 
 Operações implementadas, com todos os códigos de status previstos no protocolo:
 
@@ -43,7 +43,9 @@ segunda-feira, turno da manhã, primeira aula (07:30–08:20). O dia vai de `2`
 funciona nele. Os horários são obrigatórios no cadastro.
 
 Ler uma sala **com uma data** devolve a agenda daquele dia: um horário por
-linha, livre ou ocupada, e quem reservou. É o que o item (e) da EP-2 pede.
+linha, livre ou ocupada, e quem reservou. É o que o item (e) da EP-2 pede. Sem
+`room_id`, o `read_room` lê **todas** as salas (regra 9.16) — e com a data,
+cada uma traz a sua agenda: o dia inteiro do campus numa requisição só.
 
 Nas reservas, **verificar a disponibilidade e gravar acontecem na mesma seção
 crítica**, com uma trava por `room_id` (regra 5.1). Sem isso, dois clientes
@@ -79,6 +81,23 @@ A tela do servidor mostra **quem está logado**, atualizada a cada três segundo
 (item h da EP-3). Conexão aberta e sessão são coisas diferentes: o contador de
 clientes conta sockets, a tabela conta pessoas — e uma sessão sobrevive ao
 fechamento da conexão (regra 1.11).
+
+**Horário não se digita: escolhe-se numa lista.** A regra 8.3 só aceita começo
+e fim de aula da UTFPR, então um campo livre existia apenas para dar a quem usa
+a chance de errar. As listas mostram `13:00 (T1)` — a hora primeiro, porque é o
+que a pessoa procura, e o código da aula entre parênteses, porque é ele que
+aparece nos horários de funcionamento da sala. A lista de **fim** só oferece o
+que vem depois do início escolhido, o que elimina o `400` mais fácil de
+cometer. Os horários de funcionamento da sala também viraram uma lista, com o
+dia e a hora por extenso, no lugar de digitar `2M1, 2M2`.
+
+**Reservar num horário que já passou é avisado pelo cliente**, antes de mandar.
+O protocolo tem uma mensagem de formato por operação, então o servidor responde
+"Dados da reserva em formato invalido" tanto para um campo mal preenchido
+quanto para o passado (regra 9.3) — e trocar esse texto quebraria a
+interoperabilidade. Quem pode explicar melhor é o cliente, que sabe o que a
+pessoa acabou de escolher: *"Esse dia já passou"* ou *"Esse horário de hoje já
+começou"*.
 
 No cliente, a aba **Usuários** só existe enquanto a sessão for de
 administrador, e o mesmo vale para o grupo de administração dentro da aba
@@ -204,7 +223,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 619 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 673 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
 operações do protocolo, a construção das telas, e a tela do cliente
@@ -371,7 +390,7 @@ lib/               Bibliotecas, versionadas para o projeto rodar sem baixar nada
 
 A especificação é mantida pela turma e hoje vive em um documento AsyncAPI
 (`asyncapi.yaml`) no repositório `protocolo-reserva-salas`. Este código está em
-conformidade com a **versão 2.10.0**.
+conformidade com a **versão 2.11.0**.
 
 ### O que mudou da 2.8 para a 2.9.1
 
@@ -392,7 +411,7 @@ este código:
 
 O arquivo `Protocolo de troca de Mensagens.xlsx` neste repositório é o retrato da
 planilha original (versão 2.0), em que a EP-1 foi escrita, e fica como
-histórico. As diferenças da 2.0 para a 2.10.0 que afetam a EP-1 são cinco: e-mail
+histórico. As diferenças da 2.0 para a 2.11.0 que afetam a EP-1 são cinco: e-mail
 aceita domínio de vários níveis; `delete_user` com senha errada responde 403
 "Senha incorreta" sem derrubar a sessão; alterar usuário sem mudar nada responde
 400 "Nenhum dado para atualizar"; o login checa e cria a sessão na mesma seção

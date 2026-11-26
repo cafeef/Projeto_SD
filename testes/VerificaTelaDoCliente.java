@@ -185,7 +185,7 @@ public class VerificaTelaDoCliente {
             campoDe("painelSalas", "salaLocal").setText("Bloco B - 1 andar");
             campoDe("painelSalas", "salaRecursos").setText("projetor, tv");
             // 2026-12-01 e uma terca (digito 3 na grade da UTFPR).
-            campoDe("painelSalas", "salaHorarios").setText("3T1, 3T2, 3T3");
+            slots("painelSalas", "salaHorarios").selecionar("3T1, 3T2, 3T3");
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Cadastrar nova sala"));
@@ -210,8 +210,8 @@ public class VerificaTelaDoCliente {
 
         naEdt(() -> {
             campoDe("painelSalas", "filtroData").setText("2026-12-01");
-            campoDe("painelSalas", "filtroInicio").setText("13:00");
-            campoDe("painelSalas", "filtroFim").setText("14:40");
+            hora("painelSalas", "filtroInicio").selecionarHora("13:00");
+            hora("painelSalas", "filtroFim").selecionarHora("14:40");
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Listar salas"));
@@ -260,7 +260,7 @@ public class VerificaTelaDoCliente {
             campoDe("painelSalas", "salaCapacidade").setText("12");
             campoDe("painelSalas", "salaLocal").setText("Bloco C");
             campoDe("painelSalas", "salaRecursos").setText("tv");
-            campoDe("painelSalas", "salaHorarios").setText("3T1, 3T2, 3T3");
+            slots("painelSalas", "salaHorarios").selecionar("3T1, 3T2, 3T3");
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Cadastrar nova sala"));
@@ -276,8 +276,8 @@ public class VerificaTelaDoCliente {
         naEdt(() -> {
             campoDe("painelReservas", "dispSala").setText(idSala);
             campoDe("painelReservas", "dispData").setText(diaDaReserva);
-            campoDe("painelReservas", "dispInicio").setText("13:00");
-            campoDe("painelReservas", "dispFim").setText("14:40");
+            hora("painelReservas", "dispInicio").selecionarHora("13:00");
+            hora("painelReservas", "dispFim").selecionarHora("14:40");
         });
         limparDialogos();
         clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
@@ -290,8 +290,8 @@ public class VerificaTelaDoCliente {
         naEdt(() -> {
             campoDe("painelReservas", "novaSala").setText(idSala);
             campoDe("painelReservas", "novaData").setText(diaDaReserva);
-            campoDe("painelReservas", "novaInicio").setText("13:00");
-            campoDe("painelReservas", "novaFim").setText("14:40");
+            hora("painelReservas", "novaInicio").selecionarHora("13:00");
+            hora("painelReservas", "novaFim").selecionarHora("14:40");
             campoDe("painelReservas", "novaAssunto").setText("Reuniao de projeto");
             campoDe("painelReservas", "novaParticipantes").setText("6");
         });
@@ -299,6 +299,34 @@ public class VerificaTelaDoCliente {
         clicar(botaoEm("painelReservas", "Reservar sala"));
         confere("d) usuario faz uma reserva com assunto e participantes",
                 esperar(() -> algumDialogo("Reserva realizada com sucesso")));
+
+        // Horario que ja passou: a tela avisa ANTES de mandar, com todas as
+        // letras. O servidor responderia "Dados da reserva em formato
+        // invalido", que nao diz a quem le o que esta errado.
+        naEdt(() -> {
+            campoDe("painelReservas", "novaSala").setText(idSala);
+            campoDe("painelReservas", "novaData").setText(
+                    java.time.LocalDate.now().minusDays(7).toString());
+            // O início antes do fim: a lista de fins só mostra o que vem
+            // depois do início escolhido.
+            hora("painelReservas", "novaInicio").selecionarHora("13:00");
+            hora("painelReservas", "novaFim").selecionarHora("14:40");
+            campoDe("painelReservas", "novaAssunto").setText("Reuniao no passado");
+            campoDe("painelReservas", "novaParticipantes").setText("4");
+        });
+        limparDialogos();
+        clicar(botaoEm("painelReservas", "Reservar sala"));
+        confere("d) reservar no passado diz que o dia passou",
+                esperar(() -> algumDialogo("já passou")));
+        confere("d) e nao fala em \"dados invalidos\"",
+                !algumDialogo("formato inv") && !algumDialogo("Dados"));
+
+        // Volta a data boa para os itens seguintes.
+        naEdt(() -> {
+            campoDe("painelReservas", "novaData").setText(diaDaReserva);
+            campoDe("painelReservas", "novaAssunto").setText("Reuniao de projeto");
+            campoDe("painelReservas", "novaParticipantes").setText("6");
+        });
 
         // --- item c) recuperar as proprias reservas ---
         limparDialogos();
@@ -332,8 +360,8 @@ public class VerificaTelaDoCliente {
             // o numero de participantes, e apaga o resto ("nao alterar").
             campoDe("painelReservas", "novaSala").setText("");
             campoDe("painelReservas", "novaData").setText("");
-            campoDe("painelReservas", "novaInicio").setText("");
-            campoDe("painelReservas", "novaFim").setText("");
+            hora("painelReservas", "novaInicio").selecionarHora("");
+            hora("painelReservas", "novaFim").selecionarHora("");
             campoDe("painelReservas", "novaAssunto").setText("Reuniao remarcada");
             campoDe("painelReservas", "novaParticipantes").setText("8");
         });
@@ -352,8 +380,8 @@ public class VerificaTelaDoCliente {
         naEdt(() -> {
             campoDe("painelReservas", "novaSala").setText("");
             campoDe("painelReservas", "novaData").setText("");
-            campoDe("painelReservas", "novaInicio").setText("");
-            campoDe("painelReservas", "novaFim").setText("13:50");
+            hora("painelReservas", "novaInicio").selecionarHora("");
+            hora("painelReservas", "novaFim").selecionarHora("13:50");
             campoDe("painelReservas", "novaAssunto").setText("");
             campoDe("painelReservas", "novaParticipantes").setText("");
         });
@@ -362,8 +390,8 @@ public class VerificaTelaDoCliente {
         confere("e) usuario encurta a reserva e libera a sala",
                 esperar(() -> algumDialogo("Reserva atualizada com sucesso")));
         naEdt(() -> {
-            campoDe("painelReservas", "dispInicio").setText("13:50");
-            campoDe("painelReservas", "dispFim").setText("14:40");
+            hora("painelReservas", "dispInicio").selecionarHora("13:50");
+            hora("painelReservas", "dispFim").selecionarHora("14:40");
         });
         limparDialogos();
         clicar(botaoEm("painelReservas", "Verificar disponibilidade"));
@@ -691,6 +719,16 @@ public class VerificaTelaDoCliente {
 
     static JTextField campoDe(String painel, String campo) {
         return (JTextField) campoDeObjeto(ler(painel), campo);
+    }
+
+    /** Lista de escolha de horario: "13:00" em vez de um campo de texto. */
+    static cliente.ComboDeHorario hora(String painel, String campo) {
+        return (cliente.ComboDeHorario) campoDeObjeto(ler(painel), campo);
+    }
+
+    /** Lista de escolha dos horarios de funcionamento da sala. */
+    static cliente.SeletorDeSlots slots(String painel, String campo) {
+        return (cliente.SeletorDeSlots) campoDeObjeto(ler(painel), campo);
     }
 
     @SuppressWarnings("unchecked")

@@ -14,6 +14,7 @@ import servidor.modelo.Usuario;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -46,7 +47,11 @@ public class ReadRoomHandler extends HandlerAutenticado {
         String roomId;
         String data;
         try {
-            roomId = Validador.obrigatorio(requisicao, "room_id");
+            // Regra 9.16 (v2.11): a chave virou OPCIONAL. Sem ela, le todas as
+            // salas. Mas enviada fora do formato continua 400 -- o 200 com a
+            // lista vale so para quem nao mandou a chave, e nao para quem
+            // mandou um id torto.
+            roomId = Validador.filtroOpcional(requisicao, "room_id");
             data = Validador.filtroOpcional(requisicao, "date");
             if (data != null) {
                 // A regex aprova a data, o calendario nao: "2026-02-31" casa
@@ -55,6 +60,12 @@ public class ReadRoomHandler extends HandlerAutenticado {
             }
         } catch (CampoInvalidoException | DateTimeParseException e) {
             return erro400();
+        }
+
+        LocalDate dia = data == null ? null : LocalDate.parse(data);
+
+        if (roomId == null) {
+            return todasAsSalas(dia, data, autor, token);
         }
 
         Sala sala = SalaDAO.buscarPorId(Integer.parseInt(roomId));
@@ -70,9 +81,43 @@ public class ReadRoomHandler extends HandlerAutenticado {
             resposta.add(campo, dados.get(campo));
         }
 
-        if (data != null) {
+        if (dia != null) {
             resposta.addProperty("date", data);
-            resposta.add("agenda", agendaDoDia(sala, LocalDate.parse(data), autor, token));
+            resposta.add("agenda", agendaDoDia(sala, dia, autor, token));
+        }
+        return resposta;
+    }
+
+    /**
+     * O read_room SEM 'room_id': todas as salas em 'count' + 'rooms' (regra
+     * 9.16, v2.11).
+     *
+     * Aqui nao existe 404 -- nao ha sala para nao encontrar. Banco sem sala
+     * nenhuma responde 200 com count "0", como qualquer listagem.
+     *
+     * Com 'date', cada sala leva a propria agenda dentro do seu item: e o dia
+     * inteiro do campus numa requisicao so, no lugar de um read_room por sala.
+     */
+    private JsonObject todasAsSalas(LocalDate dia, String data, Usuario autor, String token)
+            throws Exception {
+        List<Sala> salas = SalaDAO.listar(null);
+
+        JsonArray lista = new JsonArray();
+        for (Sala sala : salas) {
+            JsonObject item = SalaJson.de(sala, null);
+            if (dia != null) {
+                item.addProperty("date", data);
+                item.add("agenda", agendaDoDia(sala, dia, autor, token));
+            }
+            lista.add(item);
+        }
+
+        JsonObject resposta = resposta("200", "Consulta realizada com sucesso");
+        // Regra 2.7: a contagem tambem e string.
+        resposta.addProperty("count", String.valueOf(salas.size()));
+        resposta.add("rooms", lista);
+        if (dia != null) {
+            resposta.addProperty("date", data);
         }
         return resposta;
     }

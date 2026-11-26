@@ -24,6 +24,8 @@ public class VerificaCliente {
         horarios();
         requisicoesDeAdmin();
         reservas();
+        seletores();
+        horarioQuePassou();
 
         System.out.println("\n===== cliente: " + ok + " passaram, " + falhas + " falharam =====");
         if (falhas > 0) System.exit(1);
@@ -290,6 +292,149 @@ public class VerificaCliente {
         respostaLivre.addProperty("available", "false");
         confere("a sala ocupada nao e anunciada como livre",
                 PainelReservas.textoDaDisponibilidade(respostaLivre).contains("NÃO está"));
+    }
+
+    // ------------------------------------------- listas de escolha de horário
+
+    /**
+     * As listas que substituiram os campos de texto de horario.
+     *
+     * Sao componentes Swing, mas nenhum deles abre janela: dao para construir
+     * e interrogar sem tela, como qualquer objeto.
+     */
+    static void seletores() {
+        System.out.println("\n-- listas de escolha de horario --");
+
+        ComboDeHorario inicio = ComboDeHorario.inicio(ComboDeHorario.NAO_INFORMADO);
+        confere("a lista de inicio tem a opcao vazia mais as 17 aulas",
+                inicio.getItemCount() == 18);
+        confere("a opcao vazia vem primeiro e vale \"\"",
+                ComboDeHorario.NAO_INFORMADO.equals(inicio.getItemAt(0))
+                        && "".equals(inicio.hora()));
+        confere("o rotulo mostra a hora e o codigo da aula",
+                "13:00 (T1)".equals(inicio.getItemAt(7)));
+
+        inicio.selecionarHora("13:00");
+        confere("escolher por hora devolve a hora do protocolo",
+                "13:00".equals(inicio.hora()));
+        inicio.selecionarHora("");
+        confere("limpar volta para a opcao vazia", "".equals(inicio.hora()));
+        inicio.selecionarHora("14:15");
+        confere("hora fora da grade nao seleciona nada", "".equals(inicio.hora()));
+
+        // A lista de fim acompanha o inicio: so o que vem DEPOIS.
+        ComboDeHorario fim = ComboDeHorario.fim(ComboDeHorario.NAO_INFORMADO);
+        fim.seguir(inicio);
+        inicio.selecionarHora("22:10");
+        confere("com inicio 22:10 so sobra o fim 23:00",
+                fim.getItemCount() == 2 && "23:00 (N5)".equals(fim.getItemAt(1)));
+        // Nao escolhe sozinho: numa ALTERACAO, o vazio quer dizer "mantem o
+        // fim que ja esta la", e preencher por conta propria transformaria um
+        // "nao mexa nisso" num horario novo sem a pessoa pedir.
+        confere("a lista nao escolhe o fim por conta propria",
+                "".equals(fim.hora()));
+
+        inicio.selecionarHora("13:00");
+        confere("voltando o inicio, a lista de fim cresce de novo",
+                fim.getItemCount() > 2);
+
+        // Mas um fim JA ESCOLHIDO que deixa de ser possivel precisa sair: ele
+        // nao esta mais na lista, e deixa-lo mandaria um horario invertido.
+        fim.selecionarHora("13:50");
+        confere("o fim escolhido vale", "13:50".equals(fim.hora()));
+        inicio.selecionarHora("22:10");
+        confere("fim que ficou impossivel cai para o primeiro valido",
+                "23:00".equals(fim.hora()));
+        inicio.selecionarHora("13:00");
+        fim.selecionarHora("14:40");
+        inicio.selecionarHora("13:50");
+        confere("fim que continua valido nao e trocado",
+                "14:40".equals(fim.hora()));
+        inicio.selecionarHora("13:00");
+        // O 400 mais facil de cometer deixou de ser possivel pela tela.
+        confere("nenhum fim oferecido e anterior ao inicio escolhido",
+                todosOsFinsDepoisDe(fim, "13:00"));
+
+        ComboDeHorario filtro = ComboDeHorario.inicio(ComboDeHorario.QUALQUER);
+        confere("o filtro de sala usa \"(qualquer)\" como opcao vazia",
+                ComboDeHorario.QUALQUER.equals(filtro.getItemAt(0))
+                        && "".equals(filtro.hora()));
+
+        // --- os horários de funcionamento da sala ---
+        SeletorDeSlots slots = new SeletorDeSlots();
+        confere("a lista traz os 102 horarios da grade",
+                slots.getModel().getSize() == 102);
+        confere("nada marcado devolve texto vazio", "".equals(slots.texto()));
+
+        slots.selecionar("3T1, 3T2");
+        confere("marcar por codigo devolve os mesmos codigos",
+                "3T1, 3T2".equals(slots.texto()));
+        slots.selecionar("3t1");
+        confere("codigo minusculo tambem marca", "3T1".equals(slots.texto()));
+        slots.selecionar("2M1, NAOEXISTE, 3T1");
+        confere("codigo de outra grade e ignorado sem quebrar a tela",
+                "2M1, 3T1".equals(slots.texto()));
+        slots.limpar();
+        confere("limpar desmarca tudo", "".equals(slots.texto()));
+
+        // --- a coluna de horários da tabela de salas ---
+        JsonObject sala = new JsonObject();
+        com.google.gson.JsonArray lista = new com.google.gson.JsonArray();
+        lista.add("3T1");
+        lista.add("3T2");
+        sala.add("slots", lista);
+        confere("a tabela mostra o horario por extenso, nao o codigo",
+                "terça 13:00-14:40".equals(PainelSalas.horariosResumidos(sala)));
+        confere("sala sem 'slots' nao quebra a tabela",
+                "".equals(PainelSalas.horariosResumidos(new JsonObject())));
+    }
+
+    static boolean todosOsFinsDepoisDe(ComboDeHorario fim, String inicio) {
+        for (int i = 0; i < fim.getItemCount(); i++) {
+            String rotulo = fim.getItemAt(i);
+            if (ComboDeHorario.NAO_INFORMADO.equals(rotulo)) {
+                continue;
+            }
+            if (rotulo.substring(0, 5).compareTo(inicio) <= 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // ------------------------------------------- aviso de horário que passou
+
+    /**
+     * O protocolo responde 400 "Dados da reserva em formato invalido" a
+     * qualquer erro de formato, inclusive ao horario que ja passou. A tela diz
+     * antes, e com todas as letras -- era o aviso que mais confundia.
+     */
+    static void horarioQuePassou() {
+        System.out.println("\n-- aviso de horario que passou --");
+        java.time.LocalDate hoje = java.time.LocalDate.now();
+
+        String ontem = PainelReservas.avisoDePassado(hoje.minusDays(1).toString(), "13:00");
+        confere("dia passado e avisado antes de mandar", ontem != null);
+        confere("e o aviso diz que o DIA passou, nao \"dados invalidos\"",
+                ontem.contains("já passou"));
+
+        confere("dia futuro nao e barrado",
+                PainelReservas.avisoDePassado(hoje.plusDays(7).toString(), "13:00") == null);
+
+        // Hoje depende da hora: as 07:30 ja passaram se agora e mais tarde.
+        String cedo = PainelReservas.avisoDePassado(hoje.toString(), "07:30");
+        boolean passouDas730 = java.time.LocalTime.now()
+                .isAfter(java.time.LocalTime.of(7, 30));
+        confere("hoje de manha cedo e avisado so depois de a aula comecar",
+                passouDas730 ? cedo != null && cedo.contains("já começou") : cedo == null);
+
+        // Data invalida nao e problema DESTE aviso: quem responde e o servidor,
+        // com a regra dele. Inventar uma mensagem aqui esconderia o erro real.
+        confere("data invalida passa adiante, para o servidor responder",
+                PainelReservas.avisoDePassado("2026-02-30", "13:00") == null);
+        confere("campo vazio nao vira aviso de passado",
+                PainelReservas.avisoDePassado("", "13:00") == null
+                        && PainelReservas.avisoDePassado("2027-01-01", "") == null);
     }
 
     // ----------------------------------------------------------------- admin

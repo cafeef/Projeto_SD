@@ -40,8 +40,8 @@ final class PainelSalas extends JPanel {
 
     // --- filtros do list_rooms ---
     private final JTextField filtroData = estreito(new JTextField(10));
-    private final JTextField filtroInicio = estreito(new JTextField(5));
-    private final JTextField filtroFim = estreito(new JTextField(5));
+    private final ComboDeHorario filtroInicio = ComboDeHorario.inicio(ComboDeHorario.QUALQUER);
+    private final ComboDeHorario filtroFim = ComboDeHorario.fim(ComboDeHorario.QUALQUER);
     private final JTextField filtroCapacidade = estreito(new JTextField(4));
     private final JButton botaoListar = Estilo.botaoPrincipal("Listar salas");
     private final JButton botaoLimparFiltros = new JButton("Limpar filtros");
@@ -57,7 +57,18 @@ final class PainelSalas extends JPanel {
     private final JTextField salaCapacidade = estreito(new JTextField(4));
     private final JTextField salaLocal = estreito(new JTextField(22));
     private final JTextField salaRecursos = estreito(new JTextField(26));
-    private final JTextField salaHorarios = estreito(new JTextField(26));
+    private final SeletorDeSlots salaHorarios = new SeletorDeSlots();
+
+    /**
+     * Os codigos de horario de cada sala listada, por room_id.
+     *
+     * A coluna da tabela passou a mostrar "terça 13:00-15:30", que se le mas
+     * nao se traduz de volta sem ambiguidade. Guardar os codigos como vieram
+     * e o que permite o formulario marcar exatamente os horarios da sala
+     * escolhida.
+     */
+    private final transient java.util.Map<String, String> codigosDeHorario =
+            new java.util.HashMap<>();
     private final JComboBox<String> salaEstado = new JComboBox<>(new String[] {"active", "inactive"});
     private final JButton botaoCadastrar = Estilo.botaoPrincipal("Cadastrar nova sala");
     private final JButton botaoSalvar = new JButton("Salvar na sala selecionada");
@@ -116,12 +127,11 @@ final class PainelSalas extends JPanel {
                 .campo("Nome:", linha(salaNome, rotulo("Capacidade:"), salaCapacidade))
                 .campo("Local:", linha(salaLocal, rotulo("Estado:"), salaEstado))
                 .campo("Recursos:", salaRecursos)
-                .campo("Horários:", salaHorarios)
+                .campo("Funciona em:", new JScrollPane(salaHorarios))
                 .linhaCheia(botoesAdmin)
-                .dica("Horários no código da UTFPR, separados por vírgula:"
-                        + " 2M1 = segunda, manhã, 1ª aula.")
-                .dica("Dia 2 a 7 (segunda a sábado) · turno M, T ou N ·"
-                        + " aula 1 a 6 (M e T) ou 1 a 5 (N).")
+                .dica("Marque os horários em que a sala funciona:"
+                        + " ctrl+clique para avulsos, shift+clique para uma faixa.")
+                .dica("Ao alterar, nenhum horário marcado mantém os atuais.")
                 .dica("Recursos separados por vírgula; em branco apaga todos.")
                 .dica("Nome: letras, números, espaço e hífen, até 30 caracteres.")
                 .dica("Clique numa sala da tabela para carregá-la aqui.");
@@ -189,8 +199,8 @@ final class PainelSalas extends JPanel {
         botaoListar.addActionListener(e -> listar());
         botaoLimparFiltros.addActionListener(e -> {
             filtroData.setText("");
-            filtroInicio.setText("");
-            filtroFim.setText("");
+            filtroInicio.selecionarHora("");
+            filtroFim.selecionarHora("");
             filtroCapacidade.setText("");
             listar();
         });
@@ -226,7 +236,7 @@ final class PainelSalas extends JPanel {
      */
     private void listar(boolean avisarSeVazio) {
         JsonObject req = requisicaoDeListagem(canal.token(), filtroData.getText(),
-                filtroInicio.getText(), filtroFim.getText(), filtroCapacidade.getText());
+                filtroInicio.hora(), filtroFim.hora(), filtroCapacidade.getText());
 
         canal.trocar(req, resposta -> {
             if (!"200".equals(campo(resposta, "status"))) {
@@ -240,18 +250,23 @@ final class PainelSalas extends JPanel {
     private void preencherTabela(JsonObject resposta, boolean avisarSeVazio) {
         var modelo = Estilo.modeloDe(tabela);
         modelo.setRowCount(0);
+        codigosDeHorario.clear();
         JsonArray salas = resposta.has("rooms") && resposta.get("rooms").isJsonArray()
                 ? resposta.getAsJsonArray("rooms")
                 : new JsonArray();
         for (JsonElement elemento : salas) {
             JsonObject sala = elemento.getAsJsonObject();
+            codigosDeHorario.put(campo(sala, "room_id"), listaParaTexto(sala, "slots"));
             modelo.addRow(new Object[] {
                     campo(sala, "room_id"),
                     campo(sala, "name"),
                     campo(sala, "capacity"),
                     campo(sala, "location"),
                     listaParaTexto(sala, "resources"),
-                    listaParaTexto(sala, "slots"),
+                    // A tabela mostra os horarios por extenso; os codigos
+                    // ficam guardados a parte, para o formulario poder marcar
+                    // a sala selecionada sem ter de traduzir de volta.
+                    horariosResumidos(sala),
                     "active".equals(campo(sala, "room_status")) ? "ativa" : "inativa",
                     disponibilidade(campo(sala, "available"))});
         }
@@ -305,7 +320,7 @@ final class PainelSalas extends JPanel {
     private void cadastrar() {
         JsonObject req = requisicaoDeCadastro(canal.token(), salaNome.getText(),
                 salaCapacidade.getText(), salaLocal.getText(), salaRecursos.getText(),
-                salaHorarios.getText());
+                salaHorarios.texto());
 
         canal.trocar(req, resposta -> {
             canal.informar(resposta);
@@ -324,7 +339,7 @@ final class PainelSalas extends JPanel {
 
         JsonObject req = requisicaoDeAlteracao(canal.token(), id, salaNome.getText(),
                 salaCapacidade.getText(), salaLocal.getText(), salaRecursos.getText(),
-                (String) salaEstado.getSelectedItem(), salaHorarios.getText());
+                (String) salaEstado.getSelectedItem(), salaHorarios.texto());
 
         canal.trocar(req, resposta -> {
             canal.informar(resposta);
@@ -365,6 +380,28 @@ final class PainelSalas extends JPanel {
     }
 
     // ------------------------------------------------------------------ apoio
+
+    /**
+     * Os horários de funcionamento numa linha só: "terça 13:00-15:30".
+     *
+     * É o que cabe numa célula de tabela. A lista crua de códigos cabia menos
+     * e dizia menos: "3T1, 3T2, 3T3" exige decorar a grade para virar uma
+     * hora, e era isso que a coluna mostrava antes.
+     */
+    static String horariosResumidos(JsonObject sala) {
+        if (!sala.has("slots") || !sala.get("slots").isJsonArray()) {
+            return "";
+        }
+        List<String> slots = new ArrayList<>();
+        for (JsonElement e : sala.getAsJsonArray("slots")) {
+            // Horário de uma grade que não é a nossa não quebra a tabela: o
+            // resumo o ignora, e os outros continuam aparecendo.
+            if (e.isJsonPrimitive() && Horarios.ehSlot(e.getAsString())) {
+                slots.add(e.getAsString());
+            }
+        }
+        return Horarios.resumoPorExtenso(slots);
+    }
 
     /** Os horários de funcionamento, legíveis: "2M1 (segunda, 07:30-08:20)". */
     private static String horariosPorExtenso(JsonObject resposta) {
@@ -426,7 +463,7 @@ final class PainelSalas extends JPanel {
         salaCapacidade.setText(texto(modelo.getValueAt(linha, 2)));
         salaLocal.setText(texto(modelo.getValueAt(linha, 3)));
         salaRecursos.setText(texto(modelo.getValueAt(linha, 4)));
-        salaHorarios.setText(texto(modelo.getValueAt(linha, 5)));
+        salaHorarios.selecionar(codigosDeHorario.get(texto(modelo.getValueAt(linha, 0))));
         salaEstado.setSelectedItem("ativa".equals(texto(modelo.getValueAt(linha, 6)))
                 ? "active" : "inactive");
     }
@@ -436,7 +473,7 @@ final class PainelSalas extends JPanel {
         salaCapacidade.setText("");
         salaLocal.setText("");
         salaRecursos.setText("");
-        salaHorarios.setText("");
+        salaHorarios.limpar();
         salaEstado.setSelectedItem("active");
     }
 
