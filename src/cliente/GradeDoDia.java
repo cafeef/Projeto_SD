@@ -386,6 +386,32 @@ final class GradeDoDia extends JPanel {
         }
     }
 
+    /**
+     * Marca de fora a faixa de uma sala, como se tivesse sido clicada.
+     *
+     * Serve ao formulário de reserva: quando ele abre a partir de um bloco já
+     * escolhido na grade do dia, ou de uma reserva existente, a grade dele
+     * nasce mostrando esse mesmo recorte -- e não em branco, obrigando a
+     * pessoa a escolher de novo o que ela acabou de escolher.
+     *
+     * Horário que não está livre é ignorado: ele não poderia ter sido
+     * clicado, e fingir que foi só mentiria para quem olha.
+     */
+    void escolher(String salaId, String inicio, String fim) {
+        limparEscolha();
+        if (salaId != null && inicio != null && fim != null) {
+            for (Bloco b : blocos) {
+                if (b.salaId.equals(salaId)
+                        && b.inicio.compareTo(inicio) >= 0
+                        && b.fim.compareTo(fim) <= 0) {
+                    b.escolhido = true;
+                }
+            }
+        }
+        pintar();
+        avisar();
+    }
+
     /** Limpa a escolha, depois de reservar. */
     void desmarcar() {
         limparEscolha();

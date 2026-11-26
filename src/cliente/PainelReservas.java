@@ -157,11 +157,11 @@ final class PainelReservas extends JPanel {
 
     /** Item d: reserva digitada, para quem já sabe sala e horário. */
     private void nova() {
-        FormularioDeReserva form = new FormularioDeReserva();
+        FormularioDeReserva form = new FormularioDeReserva(canal);
         if (!form.mostrar(this, "Nova reserva", false)) {
             return;
         }
-        String impedimento = impedimento(form.data(), form.inicio(), form.fim());
+        String impedimento = impedimento(form.data(), form.inicio(), form.fim(), true);
         if (impedimento != null) {
             canal.erro(impedimento);
             return;
@@ -193,7 +193,7 @@ final class PainelReservas extends JPanel {
         var modelo = Estilo.modeloDe(tabela);
         String id = texto(modelo.getValueAt(linha, 0));
 
-        FormularioDeReserva form = new FormularioDeReserva();
+        FormularioDeReserva form = new FormularioDeReserva(canal);
         form.preencher(texto(modelo.getValueAt(linha, 1)), texto(modelo.getValueAt(linha, 3)),
                 texto(modelo.getValueAt(linha, 4)), texto(modelo.getValueAt(linha, 5)),
                 texto(modelo.getValueAt(linha, 6)), texto(modelo.getValueAt(linha, 7)));
@@ -303,11 +303,28 @@ final class PainelReservas extends JPanel {
      * aplica, porque o horário nem está mudando.
      */
     static String impedimento(String data, String inicio, String fim) {
+        return impedimento(data, inicio, fim, false);
+    }
+
+    /**
+     * @param ehCriacao ao CRIAR, horário em branco não tem o sentido de
+     *                  "manter" que tem ao alterar: não há horário anterior.
+     *                  Dizer isso aqui é melhor do que mandar "" e receber de
+     *                  volta "Dados da reserva em formato invalido".
+     */
+    static String impedimento(String data, String inicio, String fim, boolean ehCriacao) {
         if (inicio.isEmpty() ^ fim.isEmpty()) {
             return "Escolha o início e o fim juntos, ou deixe os dois como estão.";
         }
         if (inicio.isEmpty()) {
-            return null;
+            if (!ehCriacao) {
+                return null;
+            }
+            // Dia passado não tem bloco escolhível: todos já passaram. Dizer
+            // "escolha o horário" ali seria mandar fazer o impossível.
+            return Passado.diaJaPassou(data)
+                    ? Passado.aviso(data, "00:00")
+                    : "Escolha o horário clicando nos blocos livres.";
         }
         return Passado.aviso(data, inicio);
     }

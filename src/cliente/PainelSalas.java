@@ -198,13 +198,14 @@ final class PainelSalas extends JPanel {
             canal.erro("Clique num bloco livre da grade para escolher o horário.");
             return;
         }
-        FormularioDeReserva form = new FormularioDeReserva();
+        FormularioDeReserva form = new FormularioDeReserva(canal);
         form.preencher(grade.salaEscolhida(), diaMostrado,
                 grade.inicioEscolhido(), grade.fimEscolhido(), "", "");
         if (!form.mostrar(this, "Reservar " + grade.nomeDaSalaEscolhida(), false)) {
             return;
         }
-        String impedimento = PainelReservas.impedimento(form.data(), form.inicio(), form.fim());
+        String impedimento = PainelReservas.impedimento(form.data(), form.inicio(),
+                form.fim(), true);
         if (impedimento != null) {
             canal.erro(impedimento);
             return;

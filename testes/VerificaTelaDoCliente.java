@@ -107,12 +107,15 @@ public class VerificaTelaDoCliente {
         });
         limparDialogos();
         clicar(botao("Entrar"));
-        // Espera pelo NOME da aba, e nao pela quantidade: contar abas faria
-        // este teste quebrar a cada aba nova, culpando o login por isso.
-        confere("login do administrador",
-                esperar(() -> nomesDasAbas().contains("Salas")));
-        confere("a aba Usuarios aparece para administrador",
-                nomesDasAbas().contains("Usuários"));
+        // Espera por uma aba que SO existe depois de um login de admin.
+        // "Salas" nao serve: ela e montada junto com a janela e esta la antes
+        // de qualquer login -- a conferencia passava mesmo com o login
+        // falhando, e a culpa caia na asserção seguinte.
+        boolean entrou = esperar(() -> nomesDasAbas().contains("Usuários"));
+        if (!entrou) {
+            System.out.println("  abas: " + nomesDasAbas() + "  dialogos: " + DIALOGOS);
+        }
+        confere("login do administrador", entrou);
         confere("a aba de reservas aparece na sessao",
                 nomesDasAbas().contains("Minhas reservas"));
         confere("a aba de administracao de salas aparece para administrador",
@@ -291,9 +294,15 @@ public class VerificaTelaDoCliente {
                 esperar(() -> algumDialogo("LIVRE")));
 
         // --- item d) reservar o bloco escolhido ---
-        aoAbrirDialogo("reservaAssunto", d -> {
+        // O formulario carrega a lista de salas e a agenda do dia pela rede;
+        // so da para confirmar depois que a grade aparece com a escolha.
+        aoAbrirDialogo("reservaAssunto", (JDialog d) -> {
+            if (!grideDesenhada(d)) {
+                return false;
+            }
             escrever(d, "reservaAssunto", "Reuniao de projeto");
             escrever(d, "reservaParticipantes", "6");
+            return true;
         });
         limparDialogos();
         clicar(botaoEm("painelSalas", "Reservar este horário"));
@@ -324,9 +333,13 @@ public class VerificaTelaDoCliente {
         // --- item e) alterar a reserva ---
         confere("e) a reserva a alterar esta selecionada",
                 selecionar(tabelaReservas, SALA_RESERVA));
-        aoAbrirDialogo("reservaAssunto", d -> {
+        aoAbrirDialogo("reservaAssunto", (JDialog d) -> {
+            if (!grideDesenhada(d)) {
+                return false;
+            }
             escrever(d, "reservaAssunto", "Reuniao remarcada");
             escrever(d, "reservaParticipantes", "8");
+            return true;
         });
         limparDialogos();
         clicar(botaoEm("painelReservas", "Alterar reserva"));
@@ -338,13 +351,19 @@ public class VerificaTelaDoCliente {
 
         // Reservar no passado: a tela avisa antes de mandar, porque o servidor
         // responderia "Dados da reserva em formato invalido" (regra 9.3).
-        aoAbrirDialogo("reservaSala", d -> {
-            escrever(d, "reservaSala", "1");
-            escrever(d, "reservaData", java.time.LocalDate.now().minusDays(7).toString());
-            escolherHora(d, "reservaInicio", "13:00");
-            escolherHora(d, "reservaFim", "13:50");
+        aoAbrirDialogo("reservaAgenda", (JDialog d) -> {
+            // Põe o dia passado e manda a agenda recarregar; só confirma
+            // quando a grade daquele dia estiver desenhada.
+            // Uma terca que ja passou: a sala de teste so funciona as tercas,
+            // e num dia em que ela nao abre a agenda viria vazia -- sem bloco
+            // nenhum, nao haveria o que esperar.
+            aplicarData(d, "reservaData", tercaPassada());
+            if (!grideDesenhada(d)) {
+                return false;
+            }
             escrever(d, "reservaAssunto", "Reuniao no passado");
             escrever(d, "reservaParticipantes", "2");
+            return true;
         });
         limparDialogos();
         clicar(botaoEm("painelReservas", "Nova reserva"));
@@ -388,35 +407,35 @@ public class VerificaTelaDoCliente {
         confere("e a sessao continua aberta (as abas nao sumiram)",
                 nomesDasAbas().contains("Minhas reservas"));
 
-        // Desconectar de proposito encerra a sessao antes, senao a conta
-        // ficaria presa por 30 minutos (regra 3.5).
+        // --- logout, fora das abas ---
         limparDialogos();
-        clicar(botao("Desconectar"));
-        confere("desconectar volta para a tela de acesso",
-                esperar(() -> botao("Conectar").isEnabled()));
-        // A prova de que o logout foi junto vem logo abaixo: se a sessao
-        // tivesse ficado de pe, o login responderia 409 por ate 30 minutos.
+        clicar(botao("Sair (logout)"));
+        confere("logout encerra a sessao",
+                esperar(() -> algumDialogo("Logout realizado com sucesso")));
 
-        // E a prova de que a conta ficou livre: entrar de novo, na hora.
-        limparDialogos();
-        clicar(botao("Conectar"));
-        confere("reconecta ao servidor", esperar(() -> botao("Desconectar").isEnabled()));
+        // --- "Desconectar" encerra a sessao antes de fechar (regra 3.5) ---
+        // Entra de novo (a conexao ja esta de pe, entao nao ha o que
+        // reconectar) e desconecta pelo botao.
         naEdt(() -> {
             campo("loginEmail").setText("admin@admin.com");
             ((JPasswordField) campo("loginSenha")).setText("admin");
         });
         limparDialogos();
         clicar(botao("Entrar"));
-        confere("entra de novo na hora, sem 409 de sessao ativa",
+        confere("entra de novo para testar o Desconectar",
                 esperar(() -> nomesDasAbas().contains("Salas")));
-        confere("e nao apareceu \"ja possui sessao ativa\"",
-                !algumDialogo("sessao ativa") && !algumDialogo("sessão ativa"));
 
-        // --- logout, fora das abas ---
         limparDialogos();
-        clicar(botao("Sair (logout)"));
-        confere("logout encerra a sessao",
-                esperar(() -> algumDialogo("Logout realizado com sucesso")));
+        clicar(botao("Desconectar"));
+        confere("desconectar volta para a tela de acesso",
+                esperar(() -> botao("Conectar").isEnabled()));
+
+        // A prova e por socket cru, e nao pela tela: se a sessao tivesse
+        // ficado de pe, este login responderia 409 por ate 30 minutos. E o
+        // socket cru nao depende de botao nenhum ficar habilitado na hora
+        // certa -- a tela ja foi conferida acima.
+        confere("a conta ficou livre: o login seguinte entra na hora",
+                loginCruFunciona(porta));
 
     }
 
@@ -445,12 +464,60 @@ public class VerificaTelaDoCliente {
      * alguns meses, e a reserva passaria a ser recusada pela regra 9.3 -- a
      * suite falharia sozinha, culpando a tela pela passagem do tempo.
      */
+    /** Uma terca-feira que ja passou, para o teste do horario no passado. */
+    static String tercaPassada() {
+        java.time.LocalDate dia = java.time.LocalDate.now().minusDays(1);
+        while (dia.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) {
+            dia = dia.minusDays(1);
+        }
+        return dia.toString();
+    }
+
     static String proximaTerca() {
         java.time.LocalDate dia = java.time.LocalDate.now().plusDays(1);
         while (dia.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) {
             dia = dia.plusDays(1);
         }
         return dia.toString();
+    }
+
+    /**
+     * Faz login e logout por socket cru e diz se o login foi aceito.
+     *
+     * Serve para provar que a sessao anterior nao ficou presa: com ela de pe,
+     * o servidor responderia 409 "Usuario ja possui sessao ativa".
+     */
+    static boolean loginCruFunciona(int porta) {
+        try (java.net.Socket s = new java.net.Socket("127.0.0.1", porta)) {
+            s.setSoTimeout(5000);
+            var saida = s.getOutputStream();
+            var entrada = s.getInputStream();
+            saida.write(("{\"op\":\"login\",\"email\":\"admin@admin.com\","
+                    + "\"password\":\"admin\"}\n").getBytes("UTF-8"));
+            saida.flush();
+            String resposta = lerLinha(entrada);
+            if (resposta == null || !resposta.contains("\"status\":\"200\"")) {
+                return false;
+            }
+            // Devolve a conta para as proximas suites.
+            String token = resposta.replaceAll(".*\"token\":\"([a-f0-9]{64})\".*", "$1");
+            saida.write(("{\"op\":\"logout\",\"token\":\"" + token + "\"}\n")
+                    .getBytes("UTF-8"));
+            saida.flush();
+            lerLinha(entrada);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static String lerLinha(java.io.InputStream entrada) throws Exception {
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        int b;
+        while ((b = entrada.read()) != -1 && b != '\n') {
+            buf.write(b);
+        }
+        return buf.size() == 0 ? null : buf.toString("UTF-8");
     }
 
     static void criarAlvos(int porta) throws Exception {
@@ -496,6 +563,10 @@ public class VerificaTelaDoCliente {
     static final java.util.concurrent.atomic.AtomicReference<Object[]> AO_ABRIR =
             new java.util.concurrent.atomic.AtomicReference<>();
 
+    /** Quantas vezes o preenchedor pendente ja pediu para esperar. */
+    static final java.util.concurrent.atomic.AtomicInteger TENTATIVAS =
+            new java.util.concurrent.atomic.AtomicInteger();
+
     /**
      * Registra o preenchimento do proximo formulario modal.
      *
@@ -509,6 +580,24 @@ public class VerificaTelaDoCliente {
      *                   falhava por uma causa que nao era a testada.
      */
     static void aoAbrirDialogo(String campoChave, java.util.function.Consumer<JDialog> acao) {
+        aoAbrirDialogo(campoChave, d -> {
+            acao.accept(d);
+            return true;
+        });
+    }
+
+    /**
+     * Versao que pode ESPERAR: devolve false enquanto o dialogo ainda nao
+     * esta pronto para ser confirmado.
+     *
+     * O formulario de reserva carrega a lista de salas e a agenda do dia pela
+     * REDE, depois de abrir. Confirmar na primeira passada do vigia pegaria o
+     * formulario vazio. Devolvendo false, o vigia deixa o dialogo de pe e
+     * tenta de novo 60 ms depois -- que e o tempo de a resposta chegar e a
+     * grade se desenhar.
+     */
+    static void aoAbrirDialogo(String campoChave, java.util.function.Predicate<JDialog> acao) {
+        TENTATIVAS.set(0);
         AO_ABRIR.set(new Object[] {campoChave, acao});
     }
 
@@ -520,11 +609,18 @@ public class VerificaTelaDoCliente {
                         if (w instanceof JDialog d && d.isVisible()) {
                             Object[] pendente = AO_ABRIR.get();
                             if (pendente != null && porNome(d, (String) pendente[0]) != null) {
-                                AO_ABRIR.set(null);
                                 @SuppressWarnings("unchecked")
-                                java.util.function.Consumer<JDialog> preencher =
-                                        (java.util.function.Consumer<JDialog>) pendente[1];
-                                preencher.accept(d);
+                                java.util.function.Predicate<JDialog> preencher =
+                                        (java.util.function.Predicate<JDialog>) pendente[1];
+                                // O limite evita a espera infinita: se o que
+                                // o preenchedor espera nunca chegar, o teste
+                                // falha pela conferencia -- com os dialogos no
+                                // relatorio --, e nao travando a suite inteira.
+                                if (!preencher.test(d) && TENTATIVAS.incrementAndGet() < 100) {
+                                    continue;
+                                }
+                                TENTATIVAS.set(0);
+                                AO_ABRIR.set(null);
                             }
                             DIALOGOS.add(textosDe(d));
                             JButton confirmar = acharBotao(d, "OK", "Sim", "Yes");
@@ -644,6 +740,38 @@ public class VerificaTelaDoCliente {
         Component c = porNome(d, nome);
         if (c instanceof cliente.ComboDeHorario combo) {
             combo.selecionarHora(hora);
+        }
+    }
+
+    /** Clica no primeiro bloco "livre" da grade dentro do dialogo. */
+    static boolean clicarBlocoLivre(JDialog d) {
+        for (Component c : todosOsComponentes(d)) {
+            if (c instanceof JButton b && "livre".equals(b.getText()) && b.isEnabled()) {
+                b.doClick();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Diz se a grade do dialogo ja desenhou algum bloco. */
+    static boolean grideDesenhada(JDialog d) {
+        for (Component c : todosOsComponentes(d)) {
+            if (c instanceof JButton b && b.getText() != null
+                    && (b.getText().equals("livre") || b.getText().equals("já passou")
+                            || b.getText().equals("—") || b.getText().equals("escolhido"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Manda o campo de data avisar que mudou, para a agenda recarregar. */
+    static void aplicarData(JDialog d, String nome, String valor) {
+        Component c = porNome(d, nome);
+        if (c instanceof JTextField campo && !valor.equals(campo.getText())) {
+            campo.setText(valor);
+            campo.postActionEvent();
         }
     }
 

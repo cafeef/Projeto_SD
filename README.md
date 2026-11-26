@@ -126,6 +126,14 @@ cadastro há o quadro da semana inteira, seis dias por dezessete aulas: clicar
 num bloco marca aquele horário, clicar no nome do dia marca a coluna toda, e na
 hora marca a linha. Ninguém digita `2M1, 2M2, 3T1`.
 
+**O formulário de reserva escolhe a sala numa lista e o horário em blocos.**
+Antes eram seis campos de digitação, e dois pediam o que ninguém sabe de cor: o
+ID da sala e um horário que caia na grade da UTFPR. Agora a sala vem de uma
+lista com nome e capacidade, e o horário vem da agenda daquele dia naquela sala
+— os mesmos blocos da aba Salas, que se recarregam quando a sala ou o dia
+mudam. Ao **alterar**, não escolher bloco nenhum quer dizer "não mexa no
+horário" (o `""` da regra 2.11).
+
 **Cada aba tem uma coisa só crescendo.** Os formulários abrem em janela própria,
 e não empilhados embaixo da tabela — antes consulta, tabela e formulário
 dividiam a mesma aba e nenhum dos três tinha espaço. E nenhuma aba com tabela
@@ -271,7 +279,7 @@ completa, então o campo vazio quer dizer "sala sem recurso nenhum".
 ./testar.sh
 ```
 
-Compila tudo, sobe um servidor com banco em memória e roda 704 verificações em
+Compila tudo, sobe um servidor com banco em memória e roda 702 verificações em
 oito suítes: validação de campos, tradução das mensagens, as requisições que o
 cliente monta, banco de dados, transporte e erros de protocolo, as vinte e uma
 operações do protocolo, a construção das telas, e a tela do cliente
